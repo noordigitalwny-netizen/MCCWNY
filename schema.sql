@@ -1,0 +1,94 @@
+-- ==============================================================================
+-- MUSLIM COMMUNITY CENTER OF WNY (MCCWNY) - ADMIN PORTAL SUPABASE SCHEMA & RLS
+-- ==============================================================================
+
+-- 1. TYPE DEFINITIONS
+-- Create custom ENUM type for transaction types
+CREATE TYPE transaction_type AS ENUM (
+  'member_fee',
+  'class_payment',
+  'general_donation',
+  'expense'
+);
+
+-- 2. TABLE DEFINITIONS
+
+-- Members Table
+CREATE TABLE IF NOT EXISTS public.members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  phone TEXT,
+  address TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Students Table
+CREATE TABLE IF NOT EXISTS public.students (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  parent_name TEXT NOT NULL,
+  phone_number TEXT,
+  address TEXT,
+  grade_level TEXT,
+  member_parent_id UUID REFERENCES public.members(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Transactions Table
+CREATE TABLE IF NOT EXISTS public.transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type transaction_type NOT NULL,
+  amount NUMERIC(10, 2) NOT NULL CHECK (amount >= 0),
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  description TEXT,
+  member_id UUID REFERENCES public.members(id) ON DELETE SET NULL,
+  student_id UUID REFERENCES public.students(id) ON DELETE SET NULL,
+  payment_method TEXT NOT NULL,
+  is_reconciled BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 3. INDEXES FOR PERFORMANCE
+CREATE INDEX IF NOT EXISTS idx_students_member_parent ON public.students(member_parent_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_member ON public.transactions(member_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_student ON public.transactions(student_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON public.transactions(type);
+CREATE INDEX IF NOT EXISTS idx_transactions_date ON public.transactions(date);
+
+-- 4. ROW LEVEL SECURITY (RLS) POLICIES
+-- Enable RLS on all tables
+ALTER TABLE public.members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+
+-- Clear any existing policies (idempotent setup)
+DROP POLICY IF EXISTS "Allow authenticated admin full access to members" ON public.members;
+DROP POLICY IF EXISTS "Allow authenticated admin full access to students" ON public.students;
+DROP POLICY IF EXISTS "Allow authenticated admin full access to transactions" ON public.transactions;
+
+-- RLS Policies for Members
+CREATE POLICY "Allow authenticated admin full access to members"
+  ON public.members
+  FOR ALL
+  TO authenticated
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+-- RLS Policies for Students
+CREATE POLICY "Allow authenticated admin full access to students"
+  ON public.students
+  FOR ALL
+  TO authenticated
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+-- RLS Policies for Transactions
+CREATE POLICY "Allow authenticated admin full access to transactions"
+  ON public.transactions
+  FOR ALL
+  TO authenticated
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');

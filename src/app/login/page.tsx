@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
-  Sparkles,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -28,7 +27,7 @@ export default function LoginPage() {
 
     const inputUser = email.trim().toLowerCase();
 
-    // Strict admin credential validation requested:
+    // Strict admin credential validation:
     // Username: mccwnyadmin or mccwnyadmin@mccwny.org
     // Password: 94Meridian@
     const isValidAdminUser =
@@ -46,19 +45,7 @@ export default function LoginPage() {
     // Set admin session cookie
     document.cookie =
       "mccwny_admin_session=true; path=/; max-age=86400; SameSite=Lax";
-    
-    setTimeout(() => {
-      router.push("/");
-      router.refresh();
-    }, 400);
-  };
 
-  const handleDemoSignIn = () => {
-    setEmail("mccwnyadmin");
-    setPassword("94Meridian@");
-    setError(null);
-    document.cookie =
-      "mccwny_admin_session=true; path=/; max-age=86400; SameSite=Lax";
     setTimeout(() => {
       router.push("/");
       router.refresh();
@@ -113,7 +100,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="mccwnyadmin"
+                placeholder="Enter admin username"
                 className="w-full pl-10 pr-4 py-3 bg-slate-950/80 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
               />
             </div>
@@ -156,27 +143,6 @@ export default function LoginPage() {
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </button>
         </form>
-
-        {/* Quick Fill Button */}
-        <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-800" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-slate-900 px-3 text-slate-500 font-medium">
-              Admin Access
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleDemoSignIn}
-          className="w-full py-3 px-4 bg-slate-800/80 hover:bg-slate-800 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700/60 flex items-center justify-center gap-2 transition-all"
-        >
-          <Sparkles className="w-4 h-4 text-emerald-400" />
-          <span>Auto-fill Admin Credentials</span>
-        </button>
 
         {/* Footer Security Badge */}
         <div className="mt-8 text-center flex items-center justify-center gap-2 text-xs text-slate-500">

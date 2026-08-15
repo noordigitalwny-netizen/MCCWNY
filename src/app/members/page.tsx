@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { initialMembers, Member } from "@/lib/data-store";
+import { getStoredMembers, saveStoredMembers, Member } from "@/lib/data-store";
 import { formatDate } from "@/lib/utils";
 import {
   Users,
@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 
 export default function MembersPage() {
-  const [members, setMembers] = useState<Member[]>(initialMembers);
+  const [members, setMembers] = useState<Member[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -42,6 +42,11 @@ export default function MembersPage() {
     phone: "",
     address: "",
   });
+
+  // Load from persistent localStorage on mount
+  useEffect(() => {
+    setMembers(getStoredMembers());
+  }, []);
 
   const showNotification = (msg: string) => {
     setToastMessage(msg);
@@ -84,21 +89,20 @@ export default function MembersPage() {
     e.preventDefault();
     if (!formData.first_name || !formData.last_name || !formData.email) return;
 
+    let updatedList: Member[];
     if (editingMember) {
       // Update existing
-      setMembers(
-        members.map((m) =>
-          m.id === editingMember.id
-            ? {
-                ...m,
-                first_name: formData.first_name,
-                last_name: formData.last_name,
-                email: formData.email,
-                phone: formData.phone,
-                address: formData.address,
-              }
-            : m
-        )
+      updatedList = members.map((m) =>
+        m.id === editingMember.id
+          ? {
+              ...m,
+              first_name: formData.first_name,
+              last_name: formData.last_name,
+              email: formData.email,
+              phone: formData.phone,
+              address: formData.address,
+            }
+          : m
       );
       showNotification(`Member "${formData.first_name} ${formData.last_name}" updated successfully.`);
       setEditingMember(null);
@@ -113,15 +117,20 @@ export default function MembersPage() {
         address: formData.address || "N/A",
         created_at: new Date().toISOString(),
       };
-      setMembers([newMem, ...members]);
+      updatedList = [newMem, ...members];
       showNotification(`Member "${newMem.first_name} ${newMem.last_name}" created successfully.`);
       setIsAddModalOpen(false);
     }
+
+    setMembers(updatedList);
+    saveStoredMembers(updatedList);
   };
 
   const handleDeleteMember = () => {
     if (!deletingMember) return;
-    setMembers(members.filter((m) => m.id !== deletingMember.id));
+    const updatedList = members.filter((m) => m.id !== deletingMember.id);
+    setMembers(updatedList);
+    saveStoredMembers(updatedList);
     showNotification(`Member "${deletingMember.first_name} ${deletingMember.last_name}" deleted.`);
     setDeletingMember(null);
   };
@@ -139,7 +148,7 @@ export default function MembersPage() {
               Members Directory
             </h1>
             <p className="text-xs text-slate-500">
-              Manage adult members, contact info, and annual dues
+              Manage adult members, contact info, and annual dues (Persistent Storage)
             </p>
           </div>
         </div>
@@ -317,7 +326,7 @@ export default function MembersPage() {
               {editingMember ? "Edit Member Profile" : "Add New Member"}
             </h3>
             <p className="text-xs text-slate-500 mb-5">
-              Enter member details to save in Supabase public.members table.
+              Enter member details. Changes will persist across sessions.
             </p>
 
             <form onSubmit={handleSaveMember} className="space-y-4 text-xs">
@@ -425,7 +434,7 @@ export default function MembersPage() {
               Delete Member Record?
             </h3>
             <p className="text-xs text-slate-500 mb-6">
-              Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">{deletingMember.first_name} {deletingMember.last_name}</strong>? This action cannot be undone.
+              Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">{deletingMember.first_name} {deletingMember.last_name}</strong>?
             </p>
 
             <div className="flex items-center justify-center gap-3">

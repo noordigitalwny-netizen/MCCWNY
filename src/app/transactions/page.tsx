@@ -1,6 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import {
+  getStoredTransactions,
+  saveStoredTransactions,
+  getStoredMembers,
+  getStoredStudents,
+  Transaction,
+  Member,
+  Student,
+} from "@/lib/data-store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   Receipt,
@@ -9,102 +18,26 @@ import {
   Filter,
   CheckCircle2,
   Clock,
-  ArrowUpRight,
-  ArrowDownRight,
   Calendar,
   X,
   CreditCard,
-  Building2,
+  Trash2,
+  AlertTriangle,
   Check,
 } from "lucide-react";
 
-interface Transaction {
-  id: string;
-  type: "member_fee" | "class_payment" | "general_donation" | "expense";
-  amount: number;
-  date: string;
-  description: string;
-  member_id: string | null;
-  student_id: string | null;
-  payment_method: string;
-  is_reconciled: boolean;
-  created_at: string;
-  memberName?: string;
-}
-
 export default function TransactionsPage() {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [reconciledFilter, setReconciledFilter] = useState<string>("all");
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    {
-      id: "tx-001",
-      type: "general_donation",
-      amount: 1250.0,
-      date: "2026-08-14",
-      description: "Friday Community Sadaqah Collection",
-      member_id: "mem-001",
-      student_id: null,
-      payment_method: "Zelle",
-      is_reconciled: true,
-      created_at: "2026-08-14T12:00:00Z",
-      memberName: "Tariq Mansoor",
-    },
-    {
-      id: "tx-002",
-      type: "member_fee",
-      amount: 300.0,
-      date: "2026-08-12",
-      description: "Annual Family Membership Dues 2026",
-      member_id: "mem-002",
-      student_id: null,
-      payment_method: "Credit Card",
-      is_reconciled: true,
-      created_at: "2026-08-12T14:30:00Z",
-      memberName: "Amina Khan",
-    },
-    {
-      id: "tx-003",
-      type: "class_payment",
-      amount: 450.0,
-      date: "2026-08-10",
-      description: "Weekend Quran Academy Tuition - Q3",
-      member_id: "mem-003",
-      student_id: "stu-003",
-      payment_method: "Check (#1042)",
-      is_reconciled: false,
-      created_at: "2026-08-10T09:15:00Z",
-      memberName: "Zayd Farooq",
-    },
-    {
-      id: "tx-004",
-      type: "expense",
-      amount: 840.5,
-      date: "2026-08-08",
-      description: "Facility Utility Payment - National Grid",
-      member_id: null,
-      student_id: null,
-      payment_method: "Bank Transfer",
-      is_reconciled: true,
-      created_at: "2026-08-08T16:20:00Z",
-      memberName: "National Grid",
-    },
-    {
-      id: "tx-005",
-      type: "general_donation",
-      amount: 2500.0,
-      date: "2026-08-05",
-      description: "Building Renovation Fund Contribution",
-      member_id: "mem-004",
-      student_id: null,
-      payment_method: "Bank Wire",
-      is_reconciled: true,
-      created_at: "2026-08-05T11:00:00Z",
-      memberName: "Fatima Al-Mansouri",
-    },
-  ]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deletingTx, setDeletingTx] = useState<Transaction | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     type: "general_donation" as Transaction["type"],
@@ -113,14 +46,37 @@ export default function TransactionsPage() {
     description: "",
     payment_method: "Zelle",
     memberName: "",
+    member_id: "",
+    student_id: "",
   });
 
+  // Load persistent transactions, members, and students on mount
+  useEffect(() => {
+    setTransactions(getStoredTransactions());
+    setMembers(getStoredMembers());
+    setStudents(getStoredStudents());
+  }, []);
+
+  const showNotification = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
   const toggleReconciled = (id: string) => {
-    setTransactions(
-      transactions.map((tx) =>
-        tx.id === id ? { ...tx, is_reconciled: !tx.is_reconciled } : tx
-      )
+    const updated = transactions.map((tx) =>
+      tx.id === id ? { ...tx, is_reconciled: !tx.is_reconciled } : tx
     );
+    setTransactions(updated);
+    saveStoredTransactions(updated);
+  };
+
+  const handleDeleteTransaction = () => {
+    if (!deletingTx) return;
+    const updated = transactions.filter((t) => t.id !== deletingTx.id);
+    setTransactions(updated);
+    saveStoredTransactions(updated);
+    showNotification(`Transaction "${deletingTx.description}" deleted.`);
+    setDeletingTx(null);
   };
 
   const filteredTransactions = transactions.filter((tx) => {
@@ -148,16 +104,20 @@ export default function TransactionsPage() {
       amount: parseFloat(formData.amount),
       date: formData.date,
       description: formData.description,
-      member_id: null,
-      student_id: null,
+      member_id: formData.member_id || null,
+      student_id: formData.student_id || null,
       payment_method: formData.payment_method,
       is_reconciled: false,
       created_at: new Date().toISOString(),
-      memberName: formData.memberName || "General Member",
+      memberName: formData.memberName || "Community Member / Vendor",
     };
 
-    setTransactions([newTx, ...transactions]);
+    const updated = [newTx, ...transactions];
+    setTransactions(updated);
+    saveStoredTransactions(updated);
+
     setIsModalOpen(false);
+    showNotification(`Transaction of ${formatCurrency(newTx.amount)} recorded.`);
     setFormData({
       type: "general_donation",
       amount: "",
@@ -165,6 +125,8 @@ export default function TransactionsPage() {
       description: "",
       payment_method: "Zelle",
       memberName: "",
+      member_id: "",
+      student_id: "",
     });
   };
 
@@ -181,7 +143,7 @@ export default function TransactionsPage() {
               Financial Transactions Ledger
             </h1>
             <p className="text-xs text-slate-500">
-              Supabase public.transactions ledger with RLS security
+              Record, reconcile, and manage community donations & expenses (Persistent Storage)
             </p>
           </div>
         </div>
@@ -194,6 +156,14 @@ export default function TransactionsPage() {
           <span>Record New Transaction</span>
         </button>
       </div>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Filter and Control Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
@@ -251,6 +221,7 @@ export default function TransactionsPage() {
                 <th className="px-6 py-4">Method</th>
                 <th className="px-6 py-4">Amount</th>
                 <th className="px-6 py-4">Reconciled</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -319,8 +290,24 @@ export default function TransactionsPage() {
                       )}
                     </button>
                   </td>
+                  <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => setDeletingTx(tx)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors"
+                      title="Delete Transaction"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </td>
                 </tr>
               ))}
+              {filteredTransactions.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
+                    No transactions found matching your criteria.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -341,7 +328,7 @@ export default function TransactionsPage() {
               Record Financial Transaction
             </h3>
             <p className="text-xs text-slate-500 mb-5">
-              Enter payment details to log in Supabase transactions database.
+              Enter payment details to save in public.transactions table.
             </p>
 
             <form onSubmit={handleRecordTransaction} className="space-y-4 text-xs">
@@ -409,7 +396,7 @@ export default function TransactionsPage() {
 
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Member / Payer Name
+                  Payer / Member / Vendor Name
                 </label>
                 <input
                   type="text"
@@ -453,6 +440,39 @@ export default function TransactionsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingTx && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl relative text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 mx-auto flex items-center justify-center mb-4">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1">
+              Delete Transaction?
+            </h3>
+            <p className="text-xs text-slate-500 mb-6">
+              Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">{deletingTx.description} ({formatCurrency(deletingTx.amount)})</strong>?
+            </p>
+
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => setDeletingTx(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs w-full"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteTransaction}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-md w-full"
+              >
+                Delete Transaction
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { initialStudents, initialMembers, Student, Member } from "@/lib/data-store";
+import { getStoredStudents, saveStoredStudents, getStoredMembers, Student, Member } from "@/lib/data-store";
 import { formatDate } from "@/lib/utils";
 import {
   GraduationCap,
@@ -25,8 +25,8 @@ import {
 } from "lucide-react";
 
 export default function StudentsPage() {
-  const [students, setStudents] = useState<Student[]>(initialStudents);
-  const [members] = useState<Member[]>(initialMembers);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -48,6 +48,12 @@ export default function StudentsPage() {
     grade_level: "Grade 4",
     member_parent_id: "",
   });
+
+  // Load from persistent storage on mount
+  useEffect(() => {
+    setStudents(getStoredStudents());
+    setMembers(getStoredMembers());
+  }, []);
 
   const showNotification = (msg: string) => {
     setToastMessage(msg);
@@ -103,23 +109,22 @@ export default function StudentsPage() {
     e.preventDefault();
     if (!formData.first_name || !formData.last_name || !formData.parent_name) return;
 
+    let updatedList: Student[];
     if (editingStudent) {
       // Update
-      setStudents(
-        students.map((s) =>
-          s.id === editingStudent.id
-            ? {
-                ...s,
-                first_name: formData.first_name,
-                last_name: formData.last_name,
-                parent_name: formData.parent_name,
-                phone_number: formData.phone_number,
-                address: formData.address,
-                grade_level: formData.grade_level,
-                member_parent_id: formData.member_parent_id || null,
-              }
-            : s
-        )
+      updatedList = students.map((s) =>
+        s.id === editingStudent.id
+          ? {
+              ...s,
+              first_name: formData.first_name,
+              last_name: formData.last_name,
+              parent_name: formData.parent_name,
+              phone_number: formData.phone_number,
+              address: formData.address,
+              grade_level: formData.grade_level,
+              member_parent_id: formData.member_parent_id || null,
+            }
+          : s
       );
       showNotification(`Student "${formData.first_name} ${formData.last_name}" updated.`);
       setEditingStudent(null);
@@ -136,15 +141,20 @@ export default function StudentsPage() {
         member_parent_id: formData.member_parent_id || null,
         created_at: new Date().toISOString(),
       };
-      setStudents([newStu, ...students]);
+      updatedList = [newStu, ...students];
       showNotification(`Student "${newStu.first_name} ${newStu.last_name}" enrolled successfully.`);
       setIsAddModalOpen(false);
     }
+
+    setStudents(updatedList);
+    saveStoredStudents(updatedList);
   };
 
   const handleDeleteStudent = () => {
     if (!deletingStudent) return;
-    setStudents(students.filter((s) => s.id !== deletingStudent.id));
+    const updatedList = students.filter((s) => s.id !== deletingStudent.id);
+    setStudents(updatedList);
+    saveStoredStudents(updatedList);
     showNotification(`Student "${deletingStudent.first_name} ${deletingStudent.last_name}" removed.`);
     setDeletingStudent(null);
   };
@@ -162,7 +172,7 @@ export default function StudentsPage() {
               Students Roster
             </h1>
             <p className="text-xs text-slate-500">
-              Manage Sunday School & Quranic Academy enrollments
+              Manage Sunday School & Quranic Academy enrollments (Persistent Storage)
             </p>
           </div>
         </div>

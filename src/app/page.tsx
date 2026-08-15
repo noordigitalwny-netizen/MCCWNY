@@ -1,7 +1,16 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { formatCurrency } from "@/lib/utils";
+import {
+  getStoredTransactions,
+  getStoredMembers,
+  getStoredStudents,
+  Transaction,
+  Member,
+  Student,
+} from "@/lib/data-store";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   DollarSign,
   TrendingDown,
@@ -20,30 +29,55 @@ import {
 } from "lucide-react";
 
 export default function DashboardPage() {
-  // Placeholder Metrics for MCCWNY Admin Dashboard
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+
+  // Dynamically sync with persistent data store on load & focus
+  useEffect(() => {
+    const loadData = () => {
+      setTransactions(getStoredTransactions());
+      setMembers(getStoredMembers());
+      setStudents(getStoredStudents());
+    };
+
+    loadData();
+    window.addEventListener("focus", loadData);
+    return () => window.removeEventListener("focus", loadData);
+  }, []);
+
+  // Compute live dynamic financial & community totals
+  const totalDonations = transactions
+    .filter((t) => t.type !== "expense")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const totalExpenses = transactions
+    .filter((t) => t.type === "expense")
+    .reduce((sum, t) => sum + t.amount, 0);
+
   const metrics = [
     {
       title: "Total Monthly Donations",
-      value: formatCurrency(14250.0),
-      trend: "+12.5%",
+      value: formatCurrency(totalDonations),
+      trend: `${transactions.filter((t) => t.type !== "expense").length} entries`,
       isPositive: true,
-      subtitle: "vs. previous month ($12,660)",
+      subtitle: "Reconciled Sadaqah, dues & tuition",
       icon: DollarSign,
       iconBg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
     },
     {
       title: "Total Monthly Expenses",
-      value: formatCurrency(6180.0),
-      trend: "-4.2%",
-      isPositive: true,
-      subtitle: "vs. previous month ($6,450)",
+      value: formatCurrency(totalExpenses),
+      trend: `${transactions.filter((t) => t.type === "expense").length} entries`,
+      isPositive: false,
+      subtitle: "Utilities & operational costs",
       icon: TrendingDown,
       iconBg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
     },
     {
       title: "Active Members",
-      value: "142",
-      trend: "+8 new",
+      value: members.length.toString(),
+      trend: "Directory",
       isPositive: true,
       subtitle: "Active MCCWNY members",
       icon: Users,
@@ -51,8 +85,8 @@ export default function DashboardPage() {
     },
     {
       title: "Enrolled Students",
-      value: "88",
-      trend: "+5 new",
+      value: students.length.toString(),
+      trend: "Academy Roster",
       isPositive: true,
       subtitle: "Sunday & Quran Academy students",
       icon: GraduationCap,
@@ -60,53 +94,7 @@ export default function DashboardPage() {
     },
   ];
 
-  // Placeholder recent transactions
-  const recentTransactions = [
-    {
-      id: "tx-101",
-      date: "Aug 14, 2026",
-      type: "general_donation",
-      label: "General Donation",
-      description: "Friday Community Sadaqah Collection",
-      amount: 1250.0,
-      payment_method: "Zelle",
-      status: "Reconciled",
-      member: "Tariq Mansoor",
-    },
-    {
-      id: "tx-102",
-      date: "Aug 12, 2026",
-      type: "member_fee",
-      label: "Member Fee",
-      description: "Annual Family Membership Dues",
-      amount: 300.0,
-      payment_method: "Credit Card",
-      status: "Reconciled",
-      member: "Amina Khan",
-    },
-    {
-      id: "tx-103",
-      date: "Aug 10, 2026",
-      type: "class_payment",
-      label: "Class Payment",
-      description: "Weekend Quran Academy Tuition - Q3",
-      amount: 450.0,
-      payment_method: "Check (#1042)",
-      status: "Pending",
-      member: "Zayd Farooq",
-    },
-    {
-      id: "tx-104",
-      date: "Aug 08, 2026",
-      type: "expense",
-      label: "Expense",
-      description: "Facility Utility Payment - National Grid",
-      amount: 840.5,
-      payment_method: "Bank Transfer",
-      status: "Reconciled",
-      member: "Vendor / Operating",
-    },
-  ];
+  const recentTransactions = transactions.slice(0, 5);
 
   return (
     <div className="space-y-8">
@@ -122,7 +110,7 @@ export default function DashboardPage() {
               Assalamu Alaikum, Administrator
             </h1>
             <p className="text-emerald-100/80 text-sm leading-relaxed">
-              Welcome to the Muslim Community Center of WNY management hub. Monitor membership dues, student enrollments, and reconcile bank transactions efficiently.
+              Welcome to the Muslim Community Center of WNY management hub. Live totals auto-update when you record or delete transactions, members, or student records.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -138,7 +126,7 @@ export default function DashboardPage() {
               className="px-4 py-2.5 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 text-white font-semibold text-xs transition-all border border-emerald-600/60 flex items-center gap-2"
             >
               <UploadCloud className="w-4 h-4" />
-              <span>Upload Bank CSV</span>
+              <span>Upload Bank PDF</span>
             </Link>
           </div>
         </div>
@@ -230,7 +218,7 @@ export default function DashboardPage() {
                 {recentTransactions.map((tx) => (
                   <tr key={tx.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
                     <td className="px-4 py-3.5 font-medium text-slate-700 dark:text-slate-300">
-                      {tx.date}
+                      {formatDate(tx.date)}
                     </td>
                     <td className="px-4 py-3.5">
                       <span
@@ -241,15 +229,15 @@ export default function DashboardPage() {
                             ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
                             : tx.type === "class_payment"
                             ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800"
-                            : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800"
+                            : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
                         }`}
                       >
-                        {tx.label}
+                        {tx.type.replace("_", " ")}
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
                       <p className="font-semibold text-slate-900 dark:text-slate-100">
-                        {tx.member}
+                        {tx.memberName || "Community Member"}
                       </p>
                       <p className="text-[11px] text-slate-500 truncate max-w-[200px]">
                         {tx.description}
@@ -266,7 +254,7 @@ export default function DashboardPage() {
                       {formatCurrency(tx.amount)}
                     </td>
                     <td className="px-4 py-3.5">
-                      {tx.status === "Reconciled" ? (
+                      {tx.is_reconciled ? (
                         <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
                           <CheckCircle2 className="w-3.5 h-3.5" /> Reconciled
                         </span>
@@ -278,6 +266,13 @@ export default function DashboardPage() {
                     </td>
                   </tr>
                 ))}
+                {recentTransactions.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
+                      No transactions logged yet. Click "Record Transaction" to add one!
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -341,7 +336,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-left">
                     <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                      Import Bank Statement
+                      Import Bank PDF Statement
                     </p>
                     <p className="text-[11px] text-slate-500">
                       Reconcile monthly ledger

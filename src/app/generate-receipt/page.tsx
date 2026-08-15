@@ -418,10 +418,10 @@ export default function GenerateReceiptPage() {
             </div>
           </div>
 
-          {/* Tax Disclaimer Notice */}
+          {/* Disclaimer Notice */}
           <div className="text-[11px] text-slate-500 leading-relaxed border-t border-slate-200 pt-4 space-y-1">
             <p className="font-semibold text-slate-700 flex items-center gap-1">
-              <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" /> Official Tax Deduction Notice:
+              <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />  Note:
             </p>
             <p>
             </p>

@@ -198,7 +198,21 @@ export const initialTransactions: Transaction[] = [
   },
 ];
 
-// Persistent LocalStorage Helpers for Members
+// Helper to push store to server for Incognito & cross-device sync
+async function pushToServer(key: string, data: any) {
+  if (typeof window === "undefined") return;
+  try {
+    await fetch("/api/store", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [key]: data }),
+    });
+  } catch (e) {
+    console.error("Server sync error:", e);
+  }
+}
+
+// Persistent LocalStorage + Server Sync Helpers for Members
 export function getStoredMembers(): Member[] {
   if (typeof window === "undefined") return initialMembers;
   try {
@@ -217,9 +231,10 @@ export function saveStoredMembers(members: Member[]): void {
   } catch (e) {
     console.error("Error saving members to storage:", e);
   }
+  pushToServer("members", members);
 }
 
-// Persistent LocalStorage Helpers for Students
+// Persistent LocalStorage + Server Sync Helpers for Students
 export function getStoredStudents(): Student[] {
   if (typeof window === "undefined") return initialStudents;
   try {
@@ -238,9 +253,10 @@ export function saveStoredStudents(students: Student[]): void {
   } catch (e) {
     console.error("Error saving students to storage:", e);
   }
+  pushToServer("students", students);
 }
 
-// Persistent LocalStorage Helpers for Transactions
+// Persistent LocalStorage + Server Sync Helpers for Transactions
 export function getStoredTransactions(): Transaction[] {
   if (typeof window === "undefined") return initialTransactions;
   try {
@@ -259,4 +275,5 @@ export function saveStoredTransactions(transactions: Transaction[]): void {
   } catch (e) {
     console.error("Error saving transactions to storage:", e);
   }
+  pushToServer("transactions", transactions);
 }

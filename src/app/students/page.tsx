@@ -49,10 +49,30 @@ export default function StudentsPage() {
     member_parent_id: "",
   });
 
-  // Load from persistent storage on mount
+  // Load from persistent storage on mount & hydrate from server store
   useEffect(() => {
     setStudents(getStoredStudents());
     setMembers(getStoredMembers());
+
+    fetch("/api/store")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          if (data.students && data.students.length > 0) {
+            setStudents(data.students);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("mccwny_students", JSON.stringify(data.students));
+            }
+          }
+          if (data.members && data.members.length > 0) {
+            setMembers(data.members);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("mccwny_members", JSON.stringify(data.members));
+            }
+          }
+        }
+      })
+      .catch((err) => console.error("Server store fetch error:", err));
   }, []);
 
   const showNotification = (msg: string) => {
@@ -131,7 +151,7 @@ export default function StudentsPage() {
     } else {
       // Create new
       const newStu: Student = {
-        id: `stu-00${students.length + 1}`,
+        id: `stu-${Date.now()}`,
         first_name: formData.first_name,
         last_name: formData.last_name,
         parent_name: formData.parent_name,
@@ -172,7 +192,7 @@ export default function StudentsPage() {
               Students Roster
             </h1>
             <p className="text-xs text-slate-500">
-              Manage Sunday School & Quranic Academy enrollments (Persistent Storage)
+              Manage Sunday School & Quranic Academy enrollments (Cross-Session Sync)
             </p>
           </div>
         </div>
@@ -231,7 +251,7 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      {/* Data Table displaying: Student Name, Parent Name, Phone Number, Grade Level, Linked Member Parent, Actions */}
+      {/* Data Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">

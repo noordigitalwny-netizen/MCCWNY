@@ -60,12 +60,23 @@ export default function DashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>("08"); // Default to August
   const [selectedYear, setSelectedYear] = useState<string>("2026"); // Default to 2026
 
-  // Dynamically sync with persistent data store on load & focus
+  // Dynamically sync with persistent data store & server store on load & focus
   useEffect(() => {
     const loadData = () => {
       setTransactions(getStoredTransactions());
       setMembers(getStoredMembers());
       setStudents(getStoredStudents());
+
+      fetch("/api/store")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data) {
+            if (data.transactions && data.transactions.length > 0) setTransactions(data.transactions);
+            if (data.members && data.members.length > 0) setMembers(data.members);
+            if (data.students && data.students.length > 0) setStudents(data.students);
+          }
+        })
+        .catch((err) => console.error("Server store fetch error:", err));
     };
 
     loadData();

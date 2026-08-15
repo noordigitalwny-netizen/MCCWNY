@@ -43,9 +43,21 @@ export default function MembersPage() {
     address: "",
   });
 
-  // Load from persistent localStorage on mount
+  // Load from persistent localStorage & hydrate from server store (Incognito & cross-device sync)
   useEffect(() => {
     setMembers(getStoredMembers());
+
+    fetch("/api/store")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.members && data.members.length > 0) {
+          setMembers(data.members);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("mccwny_members", JSON.stringify(data.members));
+          }
+        }
+      })
+      .catch((err) => console.error("Server store fetch error:", err));
   }, []);
 
   const showNotification = (msg: string) => {
@@ -109,7 +121,7 @@ export default function MembersPage() {
     } else {
       // Create new
       const newMem: Member = {
-        id: `mem-00${members.length + 1}`,
+        id: `mem-${Date.now()}`,
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
@@ -148,7 +160,7 @@ export default function MembersPage() {
               Members Directory
             </h1>
             <p className="text-xs text-slate-500">
-              Manage adult members, contact info, and annual dues (Persistent Storage)
+              Manage adult members, contact info, and annual dues (Cross-Session Sync)
             </p>
           </div>
         </div>

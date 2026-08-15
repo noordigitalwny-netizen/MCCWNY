@@ -26,12 +26,39 @@ import {
   ChevronRight,
   Building2,
   BadgeCheck,
+  Calendar,
 } from "lucide-react";
+
+const monthsList = [
+  { value: "all", label: "All Months" },
+  { value: "01", label: "January" },
+  { value: "02", label: "February" },
+  { value: "03", label: "March" },
+  { value: "04", label: "April" },
+  { value: "05", label: "May" },
+  { value: "06", label: "June" },
+  { value: "07", label: "July" },
+  { value: "08", label: "August" },
+  { value: "09", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
+
+const yearsList = [
+  { value: "all", label: "All Years" },
+  { value: "2026", label: "2026" },
+  { value: "2025", label: "2025" },
+  { value: "2024", label: "2024" },
+];
 
 export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>("08"); // Default to August
+  const [selectedYear, setSelectedYear] = useState<string>("2026"); // Default to 2026
 
   // Dynamically sync with persistent data store on load & focus
   useEffect(() => {
@@ -46,29 +73,43 @@ export default function DashboardPage() {
     return () => window.removeEventListener("focus", loadData);
   }, []);
 
-  // Compute live dynamic financial & community totals
-  const totalDonations = transactions
+  // Filter transactions by selected Month and Year
+  const filteredTransactions = transactions.filter((t) => {
+    if (!t.date) return true;
+    const [year, month] = t.date.split("-");
+    const matchesMonth = selectedMonth === "all" || month === selectedMonth;
+    const matchesYear = selectedYear === "all" || year === selectedYear;
+    return matchesMonth && matchesYear;
+  });
+
+  // Compute live dynamic financial & community totals for selected period
+  const totalDonations = filteredTransactions
     .filter((t) => t.type !== "expense")
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const totalExpenses = transactions
+  const totalExpenses = filteredTransactions
     .filter((t) => t.type === "expense")
     .reduce((sum, t) => sum + t.amount, 0);
 
+  const selectedMonthLabel =
+    monthsList.find((m) => m.value === selectedMonth)?.label || "All Months";
+  const selectedYearLabel =
+    yearsList.find((y) => y.value === selectedYear)?.label || "All Years";
+
   const metrics = [
     {
-      title: "Total Monthly Donations",
+      title: `Donations (${selectedMonthLabel})`,
       value: formatCurrency(totalDonations),
-      trend: `${transactions.filter((t) => t.type !== "expense").length} entries`,
+      trend: `${filteredTransactions.filter((t) => t.type !== "expense").length} entries`,
       isPositive: true,
-      subtitle: "Reconciled Sadaqah, dues & tuition",
+      subtitle: "Sadaqah, dues & tuition",
       icon: DollarSign,
       iconBg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
     },
     {
-      title: "Total Monthly Expenses",
+      title: `Expenses (${selectedMonthLabel})`,
       value: formatCurrency(totalExpenses),
-      trend: `${transactions.filter((t) => t.type === "expense").length} entries`,
+      trend: `${filteredTransactions.filter((t) => t.type === "expense").length} entries`,
       isPositive: false,
       subtitle: "Utilities & operational costs",
       icon: TrendingDown,
@@ -94,7 +135,7 @@ export default function DashboardPage() {
     },
   ];
 
-  const recentTransactions = transactions.slice(0, 5);
+  const recentTransactions = filteredTransactions.slice(0, 5);
 
   return (
     <div className="space-y-8">
@@ -110,7 +151,7 @@ export default function DashboardPage() {
               Assalamu Alaikum, Administrator
             </h1>
             <p className="text-emerald-100/80 text-sm leading-relaxed">
-              Welcome to the Muslim Community Center of WNY management hub. Live totals auto-update when you record or delete transactions, members, or student records.
+              Welcome to the Muslim Community Center of WNY management hub. Select month and year to view period totals and ledger metrics.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -128,6 +169,48 @@ export default function DashboardPage() {
               <UploadCloud className="w-4 h-4" />
               <span>Upload Bank PDF</span>
             </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Month & Year Selection Bar */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+          <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <span>Dashboard Filter Period:</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          {/* Month Selector */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-slate-500 font-medium">Month:</span>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+            >
+              {monthsList.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Year Selector */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-slate-500 font-medium">Year:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+            >
+              {yearsList.map((y) => (
+                <option key={y.value} value={y.value}>
+                  {y.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -189,10 +272,10 @@ export default function DashboardPage() {
             <div>
               <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                Recent Financial Activity
+                Period Financial Activity ({selectedMonthLabel} {selectedYearLabel})
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Latest member dues, class payments, and community Sadaqah
+                Latest member dues, class payments, and community Sadaqah for selected period
               </p>
             </div>
             <Link
@@ -269,7 +352,7 @@ export default function DashboardPage() {
                 {recentTransactions.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
-                      No transactions logged yet. Click "Record Transaction" to add one!
+                      No transactions found for {selectedMonthLabel} {selectedYearLabel}.
                     </td>
                   </tr>
                 )}

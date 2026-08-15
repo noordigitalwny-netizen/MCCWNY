@@ -9,6 +9,7 @@ import {
   Users,
   GraduationCap,
   Receipt,
+  FileCheck2,
   UploadCloud,
   BarChart3,
   LogOut,
@@ -23,6 +24,7 @@ const navigationItems = [
   { name: "Members", href: "/members", icon: Users },
   { name: "Students", href: "/students", icon: GraduationCap },
   { name: "Transactions", href: "/transactions", icon: Receipt },
+  { name: "Generate Receipt", href: "/generate-receipt", icon: FileCheck2 },
   { name: "Bank Upload", href: "/bank-upload", icon: UploadCloud },
   { name: "Reports", href: "/reports", icon: BarChart3 },
 ];
@@ -54,7 +56,7 @@ export default function Sidebar() {
   return (
     <>
       {/* Mobile Menu Button */}
-      <div className="lg:hidden fixed top-4 left-4 z-50">
+      <div className="lg:hidden fixed top-4 left-4 z-50 print:hidden">
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
           className="p-2.5 rounded-lg bg-emerald-800 text-white shadow-md hover:bg-emerald-900 focus:outline-none"
@@ -67,14 +69,14 @@ export default function Sidebar() {
       {/* Mobile Backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 lg:hidden"
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 lg:hidden print:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* Sidebar Navigation */}
       <aside
-        className={`fixed top-0 left-0 bottom-0 z-40 w-64 bg-slate-900 text-slate-100 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed top-0 left-0 bottom-0 z-40 w-64 bg-slate-900 text-slate-100 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 print:hidden ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >

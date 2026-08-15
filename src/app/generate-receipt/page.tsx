@@ -319,10 +319,10 @@ export default function GenerateReceiptPage() {
                   Muslim Community Center of West New York
                 </h2>
                 <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mt-0.5">
-                  501(c)(3) Non-Profit Religious Organization
+                  94 Meridian St, Depew, NY 14043
                 </p>
                 <p className="text-[11px] text-slate-600 mt-1">
-                  123 Community Way, Buffalo, NY 14221 | (716) 555-0199
+                  (716) 327-5286
                 </p>
               </div>
             </div>

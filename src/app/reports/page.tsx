@@ -44,10 +44,24 @@ export default function ReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>("08"); // Default to August
   const [selectedYear, setSelectedYear] = useState<string>("2026"); // Default to 2026
 
+  // Load transactions and hydrate from server store on mount and focus
   useEffect(() => {
     const loadTransactions = () => {
       setTransactions(getStoredTransactions());
+
+      fetch("/api/store")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.transactions) {
+            setTransactions(data.transactions);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("mccwny_transactions", JSON.stringify(data.transactions));
+            }
+          }
+        })
+        .catch((err) => console.error("Server store fetch error:", err));
     };
+
     loadTransactions();
     window.addEventListener("focus", loadTransactions);
     return () => window.removeEventListener("focus", loadTransactions);

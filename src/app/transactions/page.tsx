@@ -50,11 +50,31 @@ export default function TransactionsPage() {
     student_id: "",
   });
 
-  // Load persistent transactions, members, and students on mount
+  // Load persistent transactions & hydrate from server store on mount & focus
   useEffect(() => {
-    setTransactions(getStoredTransactions());
-    setMembers(getStoredMembers());
-    setStudents(getStoredStudents());
+    const loadData = () => {
+      setTransactions(getStoredTransactions());
+      setMembers(getStoredMembers());
+      setStudents(getStoredStudents());
+
+      fetch("/api/store")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.transactions) {
+            setTransactions(data.transactions);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("mccwny_transactions", JSON.stringify(data.transactions));
+            }
+          }
+          if (data && data.members) setMembers(data.members);
+          if (data && data.students) setStudents(data.students);
+        })
+        .catch((err) => console.error("Server store fetch error:", err));
+    };
+
+    loadData();
+    window.addEventListener("focus", loadData);
+    return () => window.removeEventListener("focus", loadData);
   }, []);
 
   const showNotification = (msg: string) => {
@@ -99,7 +119,7 @@ export default function TransactionsPage() {
     if (!formData.amount || !formData.description) return;
 
     const newTx: Transaction = {
-      id: `tx-00${transactions.length + 1}`,
+      id: `tx-${Date.now()}`,
       type: formData.type,
       amount: parseFloat(formData.amount),
       date: formData.date,
@@ -107,7 +127,7 @@ export default function TransactionsPage() {
       member_id: formData.member_id || null,
       student_id: formData.student_id || null,
       payment_method: formData.payment_method,
-      is_reconciled: false,
+      is_reconciled: true,
       created_at: new Date().toISOString(),
       memberName: formData.memberName || "Community Member / Vendor",
     };
@@ -143,7 +163,7 @@ export default function TransactionsPage() {
               Financial Transactions Ledger
             </h1>
             <p className="text-xs text-slate-500">
-              Record, reconcile, and manage community donations & expenses (Persistent Storage)
+              Record, reconcile, and manage community donations & expenses (Cross-Session Sync)
             </p>
           </div>
         </div>

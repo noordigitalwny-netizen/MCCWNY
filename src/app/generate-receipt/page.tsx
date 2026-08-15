@@ -424,7 +424,6 @@ export default function GenerateReceiptPage() {
               <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" /> Official Tax Deduction Notice:
             </p>
             <p>
-              Muslim Community Center of West New York is a tax-exempt 501(c)(3) religious non-profit entity. No goods or services were provided in exchange for this contribution. Please retain this receipt for your tax records.
             </p>
           </div>
 

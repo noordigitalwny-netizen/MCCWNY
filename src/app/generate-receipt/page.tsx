@@ -334,13 +334,13 @@ export default function GenerateReceiptPage() {
                 {/* MCCWNY Attached Official Seal Logo */}
                 <img
                   src="/logo.jpg"
-                  alt="Muslim Community Center of West New York Logo"
+                  alt="Muslim Community Center of Western New York Logo"
                   className="w-full h-full object-cover"
                 />
               </div>
               <div>
                 <h2 className="text-lg sm:text-xl font-extrabold text-emerald-950 tracking-tight leading-tight">
-                  Muslim Community Center of West New York
+                  Muslim Community Center of Western New York
                 </h2>
                 <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mt-0.5">
                   94 Meridian St, Depew, NY 14043

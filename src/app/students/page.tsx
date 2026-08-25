@@ -127,7 +127,7 @@ export default function StudentsPage() {
     });
   };
 
-  // Create or Update Student directly in Supabase
+  // Create or Update Student directly in Supabase (Omitting 'id' on insert to let database auto-generate UUID)
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.first_name || !formData.last_name || !formData.parent_name) {
@@ -144,8 +144,8 @@ export default function StudentsPage() {
             first_name: formData.first_name,
             last_name: formData.last_name,
             parent_name: formData.parent_name,
-            phone_number: formData.phone_number,
-            address: formData.address,
+            phone_number: formData.phone_number || null,
+            address: formData.address || null,
             grade_level: formData.grade_level,
             member_parent_id: formData.member_parent_id || null,
           })
@@ -160,9 +160,8 @@ export default function StudentsPage() {
         showToast(err.message || "Failed to update student in database.", "error");
       }
     } else {
-      // Supabase INSERT
+      // Supabase INSERT (omitting 'id')
       const newStudent = {
-        id: `stu-${Date.now()}`,
         first_name: formData.first_name,
         last_name: formData.last_name,
         parent_name: formData.parent_name,
@@ -170,7 +169,6 @@ export default function StudentsPage() {
         address: formData.address || null,
         grade_level: formData.grade_level || "Grade 1",
         member_parent_id: formData.member_parent_id || null,
-        created_at: new Date().toISOString(),
       };
 
       try {

@@ -62,7 +62,7 @@ export default function GenerateReceiptPage() {
     setReceiptNo(generateReceiptNo());
   };
 
-  // Save generated receipt directly into Supabase database
+  // Save generated receipt directly into Supabase database (Omitting 'id' so database default gen_random_uuid() triggers)
   const handleSaveToLedger = async () => {
     if (!fullName || numericAmount <= 0) {
       showToast("Please enter donor full name and a valid donation amount.", "error");
@@ -70,7 +70,6 @@ export default function GenerateReceiptPage() {
     }
 
     const newTx = {
-      id: `tx-${Date.now()}`,
       date: date,
       type: donationType === "General Donation" ? "general_donation" : "member_fee",
       amount: numericAmount,
@@ -79,7 +78,6 @@ export default function GenerateReceiptPage() {
       student_id: null,
       payment_method: paymentMethod,
       is_reconciled: true,
-      created_at: new Date().toISOString(),
       memberName: fullName,
     };
 

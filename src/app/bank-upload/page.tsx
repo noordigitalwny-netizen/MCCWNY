@@ -75,12 +75,11 @@ export default function BankUploadPage() {
     }
   };
 
-  // Sync Extracted PDF transactions directly to Supabase public.transactions
+  // Sync Extracted PDF transactions directly to Supabase public.transactions (omitting 'id' to let DB generate UUID)
   const handleImportToSupabase = async () => {
     if (parsedRows.length === 0) return;
 
     const newTransactions = parsedRows.map((row) => ({
-      id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       type: row.type === "withdrawal" ? "expense" : "general_donation",
       amount: row.amount,
       date: row.date,
@@ -89,7 +88,6 @@ export default function BankUploadPage() {
       student_id: null,
       payment_method: row.description.includes("ZELLE") ? "Zelle" : "Bank Transfer",
       is_reconciled: true,
-      created_at: new Date().toISOString(),
       memberName: row.matchedMember || "Bank Import Vendor",
     }));
 

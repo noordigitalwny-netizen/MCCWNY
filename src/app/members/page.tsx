@@ -114,7 +114,7 @@ export default function MembersPage() {
     });
   };
 
-  // Create or Update Member directly in Supabase
+  // Create or Update Member directly in Supabase (Let Supabase generate UUID id via DEFAULT gen_random_uuid())
   const handleSaveMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.first_name || !formData.last_name || !formData.email) {
@@ -131,8 +131,8 @@ export default function MembersPage() {
             first_name: formData.first_name,
             last_name: formData.last_name,
             email: formData.email,
-            phone: formData.phone,
-            address: formData.address,
+            phone: formData.phone || null,
+            address: formData.address || null,
           })
           .eq("id", editingMember.id);
 
@@ -145,15 +145,13 @@ export default function MembersPage() {
         showToast(err.message || "Failed to update member in database.", "error");
       }
     } else {
-      // Supabase INSERT
+      // Supabase INSERT (omitting 'id' so database default gen_random_uuid() triggers)
       const newMember = {
-        id: `mem-${Date.now()}`,
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
         phone: formData.phone || null,
         address: formData.address || null,
-        created_at: new Date().toISOString(),
       };
 
       try {

@@ -143,7 +143,7 @@ export default function TransactionsPage() {
     return matchesSearch && matchesType && matchesReconciled;
   });
 
-  // Record New Transaction directly in Supabase
+  // Record New Transaction directly in Supabase (Omitting 'id' so database default gen_random_uuid() triggers)
   const handleRecordTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.amount || !formData.description) {
@@ -152,7 +152,6 @@ export default function TransactionsPage() {
     }
 
     const newTx = {
-      id: `tx-${Date.now()}`,
       type: formData.type,
       amount: parseFloat(formData.amount),
       date: formData.date,
@@ -161,7 +160,6 @@ export default function TransactionsPage() {
       student_id: formData.student_id || null,
       payment_method: formData.payment_method,
       is_reconciled: true,
-      created_at: new Date().toISOString(),
       memberName: formData.memberName || "Community Member / Vendor",
     };
 

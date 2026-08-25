@@ -15,11 +15,11 @@ BEGIN
     END IF;
 END $$;
 
--- 2. TABLE DEFINITIONS
+-- 2. TABLE DEFINITIONS (UUID Primary Keys with gen_random_uuid() default)
 
 -- Members Table
 CREATE TABLE IF NOT EXISTS public.members (
-  id TEXT PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
@@ -30,26 +30,26 @@ CREATE TABLE IF NOT EXISTS public.members (
 
 -- Students Table
 CREATE TABLE IF NOT EXISTS public.students (
-  id TEXT PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   parent_name TEXT NOT NULL,
   phone_number TEXT,
   address TEXT,
   grade_level TEXT,
-  member_parent_id TEXT REFERENCES public.members(id) ON DELETE SET NULL,
+  member_parent_id UUID REFERENCES public.members(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Transactions Table
 CREATE TABLE IF NOT EXISTS public.transactions (
-  id TEXT PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   type transaction_type NOT NULL,
   amount NUMERIC(10, 2) NOT NULL CHECK (amount >= 0),
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   description TEXT,
-  member_id TEXT REFERENCES public.members(id) ON DELETE SET NULL,
-  student_id TEXT REFERENCES public.students(id) ON DELETE SET NULL,
+  member_id UUID REFERENCES public.members(id) ON DELETE SET NULL,
+  student_id UUID REFERENCES public.students(id) ON DELETE SET NULL,
   payment_method TEXT NOT NULL,
   is_reconciled BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()

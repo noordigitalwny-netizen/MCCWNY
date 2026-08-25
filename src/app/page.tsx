@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import {
-  getStoredTransactions,
-  getStoredMembers,
-  getStoredStudents,
   Transaction,
   Member,
   Student,
+  getStoredTransactions,
+  getStoredMembers,
+  getStoredStudents,
 } from "@/lib/data-store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
@@ -27,6 +28,7 @@ import {
   Building2,
   BadgeCheck,
   Calendar,
+  Receipt,
 } from "lucide-react";
 
 const monthsList = [
@@ -53,35 +55,43 @@ const yearsList = [
 ];
 
 export default function DashboardPage() {
+  const supabase = createClient();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [selectedMonth, setSelectedMonth] = useState<string>("08"); // Default to August
   const [selectedYear, setSelectedYear] = useState<string>("2026"); // Default to 2026
 
-  // Dynamically sync with persistent data store & server store on load & focus
-  useEffect(() => {
-    const loadData = () => {
+  // Fetch real database records directly from Supabase
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    try {
+      const [txRes, memRes, stuRes] = await Promise.all([
+        supabase.from("transactions").select("*").order("date", { ascending: false }),
+        supabase.from("members").select("*"),
+        supabase.from("students").select("*"),
+      ]);
+
+      if (txRes.data) setTransactions(txRes.data as Transaction[]);
+      if (memRes.data) setMembers(memRes.data as Member[]);
+      if (stuRes.data) setStudents(stuRes.data as Student[]);
+    } catch (err) {
+      console.error("Supabase fetch error:", err);
+      // Local storage fallback
       setTransactions(getStoredTransactions());
       setMembers(getStoredMembers());
       setStudents(getStoredStudents());
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      fetch("/api/store")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data) {
-            if (data.transactions && data.transactions.length > 0) setTransactions(data.transactions);
-            if (data.members && data.members.length > 0) setMembers(data.members);
-            if (data.students && data.students.length > 0) setStudents(data.students);
-          }
-        })
-        .catch((err) => console.error("Server store fetch error:", err));
-    };
-
-    loadData();
-    window.addEventListener("focus", loadData);
-    return () => window.removeEventListener("focus", loadData);
+  useEffect(() => {
+    fetchDashboardData();
+    window.addEventListener("focus", fetchDashboardData);
+    return () => window.removeEventListener("focus", fetchDashboardData);
   }, []);
 
   // Filter transactions by selected Month and Year
@@ -162,16 +172,16 @@ export default function DashboardPage() {
               Assalamu Alaikum, Administrator
             </h1>
             <p className="text-emerald-100/80 text-sm leading-relaxed">
-              Welcome to the Muslim Community Center of WNY management hub. Select month and year to view period totals and ledger metrics.
+              Welcome to the Muslim Community Center of WNY management hub. Connected to live Supabase database.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <Link
-              href="/transactions"
+              href="/generate-receipt"
               className="px-4 py-2.5 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 font-semibold text-xs transition-all shadow-md flex items-center gap-2"
             >
-              <PlusCircle className="w-4 h-4 text-emerald-700" />
-              <span>Record Transaction</span>
+              <Receipt className="w-4 h-4 text-emerald-700" />
+              <span>Generate Receipt</span>
             </Link>
             <Link
               href="/bank-upload"
@@ -286,7 +296,7 @@ export default function DashboardPage() {
                 Period Financial Activity ({selectedMonthLabel} {selectedYearLabel})
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Latest member dues, class payments, and community Sadaqah for selected period
+                Live Supabase database transactions for selected period
               </p>
             </div>
             <Link
@@ -363,7 +373,7 @@ export default function DashboardPage() {
                 {recentTransactions.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
-                      No transactions found for {selectedMonthLabel} {selectedYearLabel}.
+                      No transactions logged for {selectedMonthLabel} {selectedYearLabel}.
                     </td>
                   </tr>
                 )}

@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getStoredStudents, saveStoredStudents, getStoredMembers, Student, Member } from "@/lib/data-store";
+import { createClient } from "@/lib/supabase/client";
+import { Student, Member, getStoredStudents, saveStoredStudents, getStoredMembers } from "@/lib/data-store";
 import { formatDate } from "@/lib/utils";
 import {
   GraduationCap,
   Search,
   Plus,
+  User,
   Phone,
   MapPin,
   Calendar,
@@ -19,16 +21,15 @@ import {
   ChevronRight,
   CheckCircle,
   AlertTriangle,
-  User,
-  BookOpen,
-  Link2,
+  UserPlus,
 } from "lucide-react";
 
 export default function StudentsPage() {
+  const supabase = createClient();
   const [students, setStudents] = useState<Student[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
@@ -36,64 +37,65 @@ export default function StudentsPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deletingStudent, setDeletingStudent] = useState<Student | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Form State
+  // Notification Toast State
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  // Form State for Add / Edit
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
     parent_name: "",
     phone_number: "",
     address: "",
-    grade_level: "Grade 4",
+    grade_level: "Grade 1",
     member_parent_id: "",
   });
 
-  // Load from persistent storage on mount & hydrate from server store
-  useEffect(() => {
-    setStudents(getStoredStudents());
-    setMembers(getStoredMembers());
-
-    fetch("/api/store")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data) {
-          if (data.students && data.students.length > 0) {
-            setStudents(data.students);
-            if (typeof window !== "undefined") {
-              localStorage.setItem("mccwny_students", JSON.stringify(data.students));
-            }
-          }
-          if (data.members && data.members.length > 0) {
-            setMembers(data.members);
-            if (typeof window !== "undefined") {
-              localStorage.setItem("mccwny_members", JSON.stringify(data.members));
-            }
-          }
-        }
-      })
-      .catch((err) => console.error("Server store fetch error:", err));
-  }, []);
-
-  const showNotification = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
   };
 
-  // Filter & Search
-  const filteredStudents = students.filter((s) => {
-    const matchesSearch =
+  // Fetch Students & Parent Members directly from Supabase Database
+  const fetchStudentsAndMembers = async () => {
+    setLoading(true);
+    try {
+      const [stuRes, memRes] = await Promise.all([
+        supabase.from("students").select("*").order("created_at", { ascending: false }),
+        supabase.from("members").select("*").order("first_name", { ascending: true }),
+      ]);
+
+      if (stuRes.error) throw stuRes.error;
+      if (memRes.data) setMembers(memRes.data as Member[]);
+
+      if (stuRes.data) {
+        setStudents(stuRes.data as Student[]);
+        saveStoredStudents(stuRes.data as Student[]);
+      }
+    } catch (err: any) {
+      console.error("Supabase fetch error:", err);
+      // Fallback to stored state if offline/unreachable
+      setStudents(getStoredStudents());
+      setMembers(getStoredMembers());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStudentsAndMembers();
+  }, []);
+
+  // Search Filtering
+  const filteredStudents = students.filter(
+    (s) =>
       `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.parent_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.phone_number.includes(searchTerm) ||
-      s.grade_level.toLowerCase().includes(searchTerm.toLowerCase());
+      (s.grade_level && s.grade_level.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
-    const matchesGrade = gradeFilter === "all" || s.grade_level === gradeFilter;
-
-    return matchesSearch && matchesGrade;
-  });
-
-  // Pagination
+  // Pagination Logic
   const totalPages = Math.ceil(filteredStudents.length / itemsPerPage) || 1;
   const validPage = Math.min(currentPage, totalPages);
   const startIndex = (validPage - 1) * itemsPerPage;
@@ -106,7 +108,7 @@ export default function StudentsPage() {
       parent_name: "",
       phone_number: "",
       address: "",
-      grade_level: "Grade 4",
+      grade_level: "Grade 1",
       member_parent_id: "",
     });
     setIsAddModalOpen(true);
@@ -118,70 +120,91 @@ export default function StudentsPage() {
       first_name: student.first_name,
       last_name: student.last_name,
       parent_name: student.parent_name,
-      phone_number: student.phone_number,
-      address: student.address,
-      grade_level: student.grade_level,
+      phone_number: student.phone_number || "",
+      address: student.address || "",
+      grade_level: student.grade_level || "Grade 1",
       member_parent_id: student.member_parent_id || "",
     });
   };
 
-  const handleSaveStudent = (e: React.FormEvent) => {
+  // Create or Update Student directly in Supabase
+  const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.first_name || !formData.last_name || !formData.parent_name) return;
+    if (!formData.first_name || !formData.last_name || !formData.parent_name) {
+      showToast("Please fill in required fields (Student Name & Parent/Guardian Name).", "error");
+      return;
+    }
 
-    let updatedList: Student[];
     if (editingStudent) {
-      // Update
-      updatedList = students.map((s) =>
-        s.id === editingStudent.id
-          ? {
-              ...s,
-              first_name: formData.first_name,
-              last_name: formData.last_name,
-              parent_name: formData.parent_name,
-              phone_number: formData.phone_number,
-              address: formData.address,
-              grade_level: formData.grade_level,
-              member_parent_id: formData.member_parent_id || null,
-            }
-          : s
-      );
-      showNotification(`Student "${formData.first_name} ${formData.last_name}" updated.`);
-      setEditingStudent(null);
+      // Supabase UPDATE
+      try {
+        const { error } = await supabase
+          .from("students")
+          .update({
+            first_name: formData.first_name,
+            last_name: formData.last_name,
+            parent_name: formData.parent_name,
+            phone_number: formData.phone_number,
+            address: formData.address,
+            grade_level: formData.grade_level,
+            member_parent_id: formData.member_parent_id || null,
+          })
+          .eq("id", editingStudent.id);
+
+        if (error) throw error;
+
+        showToast(`Student "${formData.first_name} ${formData.last_name}" updated in database.`);
+        setEditingStudent(null);
+        fetchStudentsAndMembers();
+      } catch (err: any) {
+        showToast(err.message || "Failed to update student in database.", "error");
+      }
     } else {
-      // Create new
-      const newStu: Student = {
+      // Supabase INSERT
+      const newStudent = {
         id: `stu-${Date.now()}`,
         first_name: formData.first_name,
         last_name: formData.last_name,
         parent_name: formData.parent_name,
-        phone_number: formData.phone_number || "N/A",
-        address: formData.address || "N/A",
-        grade_level: formData.grade_level,
+        phone_number: formData.phone_number || null,
+        address: formData.address || null,
+        grade_level: formData.grade_level || "Grade 1",
         member_parent_id: formData.member_parent_id || null,
         created_at: new Date().toISOString(),
       };
-      updatedList = [newStu, ...students];
-      showNotification(`Student "${newStu.first_name} ${newStu.last_name}" enrolled successfully.`);
-      setIsAddModalOpen(false);
-    }
 
-    setStudents(updatedList);
-    saveStoredStudents(updatedList);
+      try {
+        const { error } = await supabase.from("students").insert([newStudent]);
+        if (error) throw error;
+
+        showToast(`Student "${newStudent.first_name} ${newStudent.last_name}" enrolled in database.`);
+        setIsAddModalOpen(false);
+        fetchStudentsAndMembers();
+      } catch (err: any) {
+        showToast(err.message || "Failed to enroll student in database.", "error");
+      }
+    }
   };
 
-  const handleDeleteStudent = () => {
+  // Delete Student directly from Supabase
+  const handleDeleteStudent = async () => {
     if (!deletingStudent) return;
-    const updatedList = students.filter((s) => s.id !== deletingStudent.id);
-    setStudents(updatedList);
-    saveStoredStudents(updatedList);
-    showNotification(`Student "${deletingStudent.first_name} ${deletingStudent.last_name}" removed.`);
-    setDeletingStudent(null);
+
+    try {
+      const { error } = await supabase.from("students").delete().eq("id", deletingStudent.id);
+      if (error) throw error;
+
+      showToast(`Student "${deletingStudent.first_name} ${deletingStudent.last_name}" deleted.`);
+      setDeletingStudent(null);
+      fetchStudentsAndMembers();
+    } catch (err: any) {
+      showToast(err.message || "Failed to delete student from database.", "error");
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center border border-purple-200 dark:border-purple-800">
@@ -192,7 +215,7 @@ export default function StudentsPage() {
               Students Roster
             </h1>
             <p className="text-xs text-slate-500">
-              Manage Sunday School & Quranic Academy enrollments (Cross-Session Sync)
+              Weekend School & Quran Academy enrollments from Supabase public.students
             </p>
           </div>
         </div>
@@ -202,21 +225,31 @@ export default function StudentsPage() {
           className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all shadow-md shadow-purple-900/20 flex items-center gap-2 self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
-          <span>Add Student</span>
+          <span>Enroll New Student</span>
         </button>
       </div>
 
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
+      {/* Notification Toast */}
+      {toast && (
+        <div
+          className={`p-4 rounded-xl text-xs flex items-center gap-2 border transition-all ${
+            toast.type === "success"
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+              : "bg-rose-500/15 border-rose-500/30 text-rose-700 dark:text-rose-300"
+          }`}
+        >
+          {toast.type === "success" ? (
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="relative w-full md:w-80">
+      {/* Search Bar */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -225,55 +258,69 @@ export default function StudentsPage() {
               setSearchTerm(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search student, parent, phone..."
+            placeholder="Search student, parent, grade level..."
             className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
 
-        {/* Grade Pills Filter */}
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
-          {["all", "Kindergarten", "Grade 2", "Grade 4", "Grade 6", "Grade 8"].map((grade) => (
-            <button
-              key={grade}
-              onClick={() => {
-                setGradeFilter(grade);
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                gradeFilter === grade
-                  ? "bg-purple-600 text-white shadow-sm"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              {grade === "all" ? "All Grades" : grade}
-            </button>
-          ))}
+        <div className="text-xs text-slate-500 font-medium">
+          Showing {paginatedStudents.length} of {filteredStudents.length} students
         </div>
       </div>
 
-      {/* Data Table */}
+      {/* Main Table / Empty State */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
-              <tr>
-                <th className="px-6 py-4">Student Name</th>
-                <th className="px-6 py-4">Parent Name</th>
-                <th className="px-6 py-4">Phone Number</th>
-                <th className="px-6 py-4">Grade Level</th>
-                <th className="px-6 py-4">Linked Member</th>
-                <th className="px-6 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {paginatedStudents.map((s) => {
-                const linkedMember = members.find((m) => m.id === s.member_parent_id);
-                return (
-                  <tr key={s.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+        {loading ? (
+          <div className="p-12 text-center text-xs text-slate-400">
+            Loading student roster from Supabase...
+          </div>
+        ) : filteredStudents.length === 0 ? (
+          /* Clean Empty State */
+          <div className="p-12 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center border border-slate-200 dark:border-slate-700">
+              <GraduationCap className="w-8 h-8 text-purple-500" />
+            </div>
+            <div className="max-w-xs mx-auto">
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                No students enrolled
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {searchTerm
+                  ? "No student matching your search query was found."
+                  : "Your academy roster is currently empty. Click 'Enroll New Student' to register your first student."}
+              </p>
+            </div>
+            <button
+              onClick={handleOpenAddModal}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs rounded-xl shadow-md"
+            >
+              Enroll First Student
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="px-6 py-4">Student Name</th>
+                  <th className="px-6 py-4">Grade Level</th>
+                  <th className="px-6 py-4">Parent / Guardian</th>
+                  <th className="px-6 py-4">Contact Phone</th>
+                  <th className="px-6 py-4">Enrolled Date</th>
+                  <th className="px-6 py-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {paginatedStudents.map((s) => (
+                  <tr
+                    key={s.id}
+                    className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                  >
                     <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-200 font-bold text-xs flex items-center justify-center border border-purple-300 dark:border-purple-800">
-                          {s.first_name[0]}
+                          {s.first_name?.[0]}
+                          {s.last_name?.[0]}
                         </div>
                         <Link
                           href={`/students/${s.id}`}
@@ -283,8 +330,13 @@ export default function StudentsPage() {
                         </Link>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300 font-medium">
-                      <div className="flex items-center gap-1.5">
+                    <td className="px-6 py-4">
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800">
+                        {s.grade_level || "Grade 1"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center gap-2">
                         <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span>{s.parent_name}</span>
                       </div>
@@ -292,34 +344,21 @@ export default function StudentsPage() {
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
                       <div className="flex items-center gap-2">
                         <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>{s.phone_number}</span>
+                        <span>{s.phone_number || "—"}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 font-semibold text-[11px]">
-                        <BookOpen className="w-3 h-3" />
-                        {s.grade_level}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {linkedMember ? (
-                        <Link
-                          href={`/members/${linkedMember.id}`}
-                          className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-medium hover:underline"
-                        >
-                          <Link2 className="w-3 h-3" />
-                          {linkedMember.first_name} {linkedMember.last_name}
-                        </Link>
-                      ) : (
-                        <span className="text-slate-400 text-[11px] font-normal">Unlinked</span>
-                      )}
+                    <td className="px-6 py-4 text-slate-500">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>{formatDate(s.created_at)}</span>
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <Link
                           href={`/students/${s.id}`}
                           className="p-1.5 rounded-lg text-slate-500 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/60 transition-colors"
-                          title="View Student Details"
+                          title="View Details"
                         >
                           <Eye className="w-4 h-4" />
                         </Link>
@@ -340,41 +379,36 @@ export default function StudentsPage() {
                       </div>
                     </td>
                   </tr>
-                );
-              })}
-              {paginatedStudents.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
-                    No students found matching your criteria.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Pagination Footer */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-          <div>
-            Page {validPage} of {totalPages}
+        {filteredStudents.length > 0 && (
+          <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+            <div>
+              Page {validPage} of {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={validPage === 1}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 font-semibold flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Previous
+              </button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                disabled={validPage >= totalPages}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 font-semibold flex items-center gap-1"
+              >
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-              disabled={validPage === 1}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 font-semibold flex items-center gap-1"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" /> Previous
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-              disabled={validPage >= totalPages}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 font-semibold flex items-center gap-1"
-            >
-              Next <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Add / Edit Student Dialog */}
@@ -395,7 +429,7 @@ export default function StudentsPage() {
               {editingStudent ? "Edit Student Record" : "Enroll New Student"}
             </h3>
             <p className="text-xs text-slate-500 mb-5">
-              Fill in student details and optionally link to a registered member parent.
+              Enter student details to save directly to Supabase public.students.
             </p>
 
             <form onSubmit={handleSaveStudent} className="space-y-4 text-xs">
@@ -442,36 +476,6 @@ export default function StudentsPage() {
                 />
               </div>
 
-              {/* Optional Searchable Dropdown linking student to members table */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                  <span>Link to Member Parent (Optional)</span>
-                  <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">FK -&gt; members.id</span>
-                </label>
-                <select
-                  value={formData.member_parent_id}
-                  onChange={(e) => {
-                    const selectedId = e.target.value;
-                    const linkedMem = members.find((m) => m.id === selectedId);
-                    setFormData({
-                      ...formData,
-                      member_parent_id: selectedId,
-                      parent_name: linkedMem ? `${linkedMem.first_name} ${linkedMem.last_name}` : formData.parent_name,
-                      phone_number: linkedMem ? linkedMem.phone : formData.phone_number,
-                      address: linkedMem ? linkedMem.address : formData.address,
-                    });
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="">-- No Member Profile Linked --</option>
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.first_name} {m.last_name} ({m.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -482,6 +486,7 @@ export default function StudentsPage() {
                     onChange={(e) => setFormData({ ...formData, grade_level: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500"
                   >
+                    <option value="Pre-K">Pre-K</option>
                     <option value="Kindergarten">Kindergarten</option>
                     <option value="Grade 1">Grade 1</option>
                     <option value="Grade 2">Grade 2</option>
@@ -491,12 +496,13 @@ export default function StudentsPage() {
                     <option value="Grade 6">Grade 6</option>
                     <option value="Grade 7">Grade 7</option>
                     <option value="Grade 8">Grade 8</option>
+                    <option value="High School">High School</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Phone Number
+                    Contact Phone
                   </label>
                   <input
                     type="text"
@@ -510,15 +516,20 @@ export default function StudentsPage() {
 
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Residential Address
+                  Link to Registered Member Parent (Optional)
                 </label>
-                <input
-                  type="text"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  placeholder="142 Amherst St, Buffalo, NY"
+                <select
+                  value={formData.member_parent_id}
+                  onChange={(e) => setFormData({ ...formData, member_parent_id: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500"
-                />
+                >
+                  <option value="">-- No Member Link --</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.first_name} {m.last_name} ({m.email})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="pt-2 flex justify-end gap-2">
@@ -553,10 +564,10 @@ export default function StudentsPage() {
             </div>
 
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1">
-              Delete Student Enrollment?
+              Delete Student Record?
             </h3>
             <p className="text-xs text-slate-500 mb-6">
-              Are you sure you want to remove <strong className="text-slate-800 dark:text-slate-200">{deletingStudent.first_name} {deletingStudent.last_name}</strong>?
+              Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">{deletingStudent.first_name} {deletingStudent.last_name}</strong> from the database?
             </p>
 
             <div className="flex items-center justify-center gap-3">

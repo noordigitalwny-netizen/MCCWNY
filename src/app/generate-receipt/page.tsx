@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { saveStoredTransactions, getStoredTransactions, Transaction } from "@/lib/data-store";
 import {
@@ -14,6 +15,7 @@ import {
   MapPin,
   HeartHandshake,
   BadgeCheck,
+  AlertTriangle,
 } from "lucide-react";
 
 const donationTypes = [
@@ -33,6 +35,7 @@ const generateReceiptNo = () => {
 };
 
 export default function GenerateReceiptPage() {
+  const supabase = createClient();
   const [receiptNo, setReceiptNo] = useState(generateReceiptNo());
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
 
@@ -46,22 +49,27 @@ export default function GenerateReceiptPage() {
   const [paymentMethod, setPaymentMethod] = useState("Zelle");
   const [notes, setNotes] = useState("");
 
-  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const numericAmount = parseFloat(amount) || 0;
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const handleRegenerateNo = () => {
     setReceiptNo(generateReceiptNo());
   };
 
-  const handleSaveToLedger = () => {
+  // Save generated receipt directly into Supabase database
+  const handleSaveToLedger = async () => {
     if (!fullName || numericAmount <= 0) {
-      alert("Please enter donor full name and a valid donation amount.");
+      showToast("Please enter donor full name and a valid donation amount.", "error");
       return;
     }
 
-    const currentTx = getStoredTransactions();
-    const newTx: Transaction = {
+    const newTx = {
       id: `tx-${Date.now()}`,
       date: date,
       type: donationType === "General Donation" ? "general_donation" : "member_fee",
@@ -75,9 +83,16 @@ export default function GenerateReceiptPage() {
       memberName: fullName,
     };
 
-    saveStoredTransactions([newTx, ...currentTx]);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 4000);
+    try {
+      const { error } = await supabase.from("transactions").insert([newTx]);
+      if (error) throw error;
+
+      showToast(`Receipt #${receiptNo} logged into Supabase database.`);
+      const currentTx = getStoredTransactions();
+      saveStoredTransactions([newTx as Transaction, ...currentTx]);
+    } catch (err: any) {
+      showToast(err.message || "Failed to save receipt to database.", "error");
+    }
   };
 
   return (
@@ -93,7 +108,7 @@ export default function GenerateReceiptPage() {
               Generate Official Donation Receipt
             </h1>
             <p className="text-xs text-slate-500">
-              Create, print, and log tax-deductible donation receipts for community members
+              Create, print, and log tax-deductible donation receipts to Supabase database
             </p>
           </div>
         </div>
@@ -116,10 +131,20 @@ export default function GenerateReceiptPage() {
         </div>
       </div>
 
-      {savedSuccess && (
-        <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2 print:hidden">
-          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-          <span>Receipt <strong>{receiptNo}</strong> successfully recorded into the financial transactions ledger!</span>
+      {toast && (
+        <div
+          className={`p-4 rounded-2xl text-xs flex items-center gap-2 border transition-all print:hidden ${
+            toast.type === "success"
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+              : "bg-rose-500/15 border-rose-500/30 text-rose-700 dark:text-rose-300"
+          }`}
+        >
+          {toast.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
 

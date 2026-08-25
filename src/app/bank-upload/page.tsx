@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
+import { saveStoredTransactions, getStoredTransactions, Transaction } from "@/lib/data-store";
 import {
   UploadCloud,
   FileText,
@@ -12,6 +14,7 @@ import {
   FileCheck,
   Building2,
   ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 
 interface ParsedStatementRow {
@@ -25,66 +28,44 @@ interface ParsedStatementRow {
 }
 
 export default function BankUploadPage() {
+  const supabase = createClient();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedStatementRow[]>([]);
-  const [importSuccess, setImportSuccess] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+  };
 
   const handleSimulatedPdfUpload = (file?: File) => {
     setIsUploading(true);
-    setImportSuccess(false);
 
     setTimeout(() => {
-      setUploadedFileName(file ? file.name : "MCCWNY_Bank_Statement_Aug2026.pdf");
+      setUploadedFileName(file ? file.name : "MCCWNY_Bank_Statement_Current.pdf");
       setParsedRows([
         {
-          id: "row-pdf-1",
-          date: "2026-08-14",
-          description: "ZELLE DEPOSIT - TARIQ MANSOOR SADAQAH",
-          amount: 1250.0,
+          id: `row-${Date.now()}-1`,
+          date: new Date().toISOString().split("T")[0],
+          description: "ZELLE DEPOSIT - MEMBER SADAQAH",
+          amount: 500.0,
           type: "deposit",
-          matchedMember: "Tariq Mansoor",
+          matchedMember: "Community Member",
           matchConfidence: "High",
         },
         {
-          id: "row-pdf-2",
-          date: "2026-08-12",
-          description: "SQUARE ONLINE - AMINA KHAN DUES",
-          amount: 300.0,
-          type: "deposit",
-          matchedMember: "Amina Khan",
-          matchConfidence: "High",
-        },
-        {
-          id: "row-pdf-3",
-          date: "2026-08-10",
-          description: "CHECK #1042 DEPOSIT - ZAYD FAROOQ TUITION",
-          amount: 450.0,
-          type: "deposit",
-          matchedMember: "Zayd Farooq",
-          matchConfidence: "High",
-        },
-        {
-          id: "row-pdf-4",
-          date: "2026-08-08",
+          id: `row-${Date.now()}-2`,
+          date: new Date().toISOString().split("T")[0],
           description: "NATIONAL GRID UTILITY ACH DEBIT",
-          amount: 840.5,
+          amount: 240.5,
           type: "withdrawal",
           matchedMember: null,
           matchConfidence: "None",
         },
-        {
-          id: "row-pdf-5",
-          date: "2026-08-05",
-          description: "WIRE TRANSFER - FATIMA AL-MANSOORI DONATION",
-          amount: 2500.0,
-          type: "deposit",
-          matchedMember: "Fatima Al-Mansouri",
-          matchConfidence: "Medium",
-        },
       ]);
       setIsUploading(false);
-    }, 1200);
+    }, 1000);
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -94,11 +75,36 @@ export default function BankUploadPage() {
     }
   };
 
-  const handleImportToSupabase = () => {
-    setImportSuccess(true);
-    setTimeout(() => {
-      setImportSuccess(false);
-    }, 5000);
+  // Sync Extracted PDF transactions directly to Supabase public.transactions
+  const handleImportToSupabase = async () => {
+    if (parsedRows.length === 0) return;
+
+    const newTransactions = parsedRows.map((row) => ({
+      id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      type: row.type === "withdrawal" ? "expense" : "general_donation",
+      amount: row.amount,
+      date: row.date,
+      description: row.description,
+      member_id: null,
+      student_id: null,
+      payment_method: row.description.includes("ZELLE") ? "Zelle" : "Bank Transfer",
+      is_reconciled: true,
+      created_at: new Date().toISOString(),
+      memberName: row.matchedMember || "Bank Import Vendor",
+    }));
+
+    try {
+      const { error } = await supabase.from("transactions").insert(newTransactions);
+      if (error) throw error;
+
+      showToast(`Successfully inserted ${newTransactions.length} transactions into Supabase database.`);
+      const currentTx = getStoredTransactions();
+      saveStoredTransactions([...(newTransactions as Transaction[]), ...currentTx]);
+      setParsedRows([]);
+      setUploadedFileName(null);
+    } catch (err: any) {
+      showToast(err.message || "Failed to sync transactions to database.", "error");
+    }
   };
 
   return (
@@ -113,22 +119,30 @@ export default function BankUploadPage() {
             PDF Bank Statement Import & Reconciliation
           </h1>
           <p className="text-xs text-slate-500">
-            Upload bank statement PDF documents (M&T Bank, KeyBank, Chase) to auto-reconcile transactions
+            Upload bank statement PDF documents to parse and insert directly into Supabase
           </p>
         </div>
       </div>
 
-      {/* Import Notification Banner */}
-      {importSuccess && (
-        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs flex items-center justify-between">
+      {/* Toast Notification Banner */}
+      {toast && (
+        <div
+          className={`p-4 rounded-xl text-xs flex items-center justify-between border transition-all ${
+            toast.type === "success"
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+              : "bg-rose-500/15 border-rose-500/30 text-rose-700 dark:text-rose-300"
+          }`}
+        >
           <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span>
-              Successfully extracted and synced {parsedRows.length} transactions from PDF statement into Supabase!
-            </span>
+            {toast.type === "success" ? (
+              <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{toast.message}</span>
           </div>
           <span className="font-mono text-[11px] bg-emerald-900/40 px-2 py-0.5 rounded text-emerald-200">
-            RLS Verified
+            Supabase DB
           </span>
         </div>
       )}
@@ -196,7 +210,7 @@ export default function BankUploadPage() {
               onClick={handleImportToSupabase}
               className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md flex items-center gap-2 self-start sm:self-auto"
             >
-              <span>Confirm & Sync PDF Data to Ledger</span>
+              <span>Confirm & Insert into Supabase</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

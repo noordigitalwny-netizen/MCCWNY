@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getStoredMembers, saveStoredMembers, Member } from "@/lib/data-store";
+import { createClient } from "@/lib/supabase/client";
+import { Member, getStoredMembers, saveStoredMembers } from "@/lib/data-store";
 import { formatDate } from "@/lib/utils";
 import {
   Users,
@@ -20,10 +21,13 @@ import {
   ChevronRight,
   CheckCircle,
   AlertTriangle,
+  UserPlus,
 } from "lucide-react";
 
 export default function MembersPage() {
+  const supabase = createClient();
   const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -32,7 +36,9 @@ export default function MembersPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [deletingMember, setDeletingMember] = useState<Member | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  
+  // Notification Toast State
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState({
@@ -43,35 +49,47 @@ export default function MembersPage() {
     address: "",
   });
 
-  // Load from persistent localStorage & hydrate from server store (Incognito & cross-device sync)
-  useEffect(() => {
-    setMembers(getStoredMembers());
-
-    fetch("/api/store")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.members && data.members.length > 0) {
-          setMembers(data.members);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("mccwny_members", JSON.stringify(data.members));
-          }
-        }
-      })
-      .catch((err) => console.error("Server store fetch error:", err));
-  }, []);
-
-  const showNotification = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
   };
 
-  // Filter & Search
+  // Fetch Members directly from Supabase Database
+  const fetchMembers = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("members")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        setMembers(data as Member[]);
+        saveStoredMembers(data as Member[]);
+      }
+    } catch (err: any) {
+      console.error("Supabase fetch error:", err);
+      // Fallback to stored state if offline/unreachable
+      const local = getStoredMembers();
+      setMembers(local);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMembers();
+  }, []);
+
+  // Search Filtering
   const filteredMembers = members.filter(
     (m) =>
       `${m.first_name} ${m.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
       m.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.phone.includes(searchTerm) ||
-      m.address.toLowerCase().includes(searchTerm.toLowerCase())
+      (m.phone && m.phone.includes(searchTerm)) ||
+      (m.address && m.address.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   // Pagination Logic
@@ -80,7 +98,6 @@ export default function MembersPage() {
   const startIndex = (validPage - 1) * itemsPerPage;
   const paginatedMembers = filteredMembers.slice(startIndex, startIndex + itemsPerPage);
 
-  // Handlers
   const handleOpenAddModal = () => {
     setFormData({ first_name: "", last_name: "", email: "", phone: "", address: "" });
     setIsAddModalOpen(true);
@@ -92,64 +109,85 @@ export default function MembersPage() {
       first_name: member.first_name,
       last_name: member.last_name,
       email: member.email,
-      phone: member.phone,
-      address: member.address,
+      phone: member.phone || "",
+      address: member.address || "",
     });
   };
 
-  const handleSaveMember = (e: React.FormEvent) => {
+  // Create or Update Member directly in Supabase
+  const handleSaveMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.first_name || !formData.last_name || !formData.email) return;
+    if (!formData.first_name || !formData.last_name || !formData.email) {
+      showToast("Please fill in required fields (First Name, Last Name, Email).", "error");
+      return;
+    }
 
-    let updatedList: Member[];
     if (editingMember) {
-      // Update existing
-      updatedList = members.map((m) =>
-        m.id === editingMember.id
-          ? {
-              ...m,
-              first_name: formData.first_name,
-              last_name: formData.last_name,
-              email: formData.email,
-              phone: formData.phone,
-              address: formData.address,
-            }
-          : m
-      );
-      showNotification(`Member "${formData.first_name} ${formData.last_name}" updated successfully.`);
-      setEditingMember(null);
+      // Supabase UPDATE
+      try {
+        const { error } = await supabase
+          .from("members")
+          .update({
+            first_name: formData.first_name,
+            last_name: formData.last_name,
+            email: formData.email,
+            phone: formData.phone,
+            address: formData.address,
+          })
+          .eq("id", editingMember.id);
+
+        if (error) throw error;
+
+        showToast(`Member "${formData.first_name} ${formData.last_name}" updated in database.`);
+        setEditingMember(null);
+        fetchMembers();
+      } catch (err: any) {
+        showToast(err.message || "Failed to update member in database.", "error");
+      }
     } else {
-      // Create new
-      const newMem: Member = {
+      // Supabase INSERT
+      const newMember = {
         id: `mem-${Date.now()}`,
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
-        phone: formData.phone || "N/A",
-        address: formData.address || "N/A",
+        phone: formData.phone || null,
+        address: formData.address || null,
         created_at: new Date().toISOString(),
       };
-      updatedList = [newMem, ...members];
-      showNotification(`Member "${newMem.first_name} ${newMem.last_name}" created successfully.`);
-      setIsAddModalOpen(false);
-    }
 
-    setMembers(updatedList);
-    saveStoredMembers(updatedList);
+      try {
+        const { error } = await supabase.from("members").insert([newMember]);
+        if (error) throw error;
+
+        showToast(`Member "${newMember.first_name} ${newMember.last_name}" saved to database.`);
+        setIsAddModalOpen(false);
+        fetchMembers();
+      } catch (err: any) {
+        showToast(err.message || "Failed to add member to database.", "error");
+      }
+    }
   };
 
-  const handleDeleteMember = () => {
+  // Delete Member directly from Supabase
+  const handleDeleteMember = async () => {
     if (!deletingMember) return;
-    const updatedList = members.filter((m) => m.id !== deletingMember.id);
-    setMembers(updatedList);
-    saveStoredMembers(updatedList);
-    showNotification(`Member "${deletingMember.first_name} ${deletingMember.last_name}" deleted.`);
-    setDeletingMember(null);
+
+    try {
+      const { error } = await supabase.from("members").delete().eq("id", deletingMember.id);
+      if (error) throw error;
+
+      showToast(`Member "${deletingMember.first_name} ${deletingMember.last_name}" deleted.`);
+      setDeletingMember(null);
+      fetchMembers();
+    } catch (err: any) {
+      showToast(err.message || "Failed to delete member from database.", "error");
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Page Action Header */}
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
@@ -160,7 +198,7 @@ export default function MembersPage() {
               Members Directory
             </h1>
             <p className="text-xs text-slate-500">
-              Manage adult members, contact info, and annual dues (Cross-Session Sync)
+              Live database records from Supabase public.members
             </p>
           </div>
         </div>
@@ -174,15 +212,25 @@ export default function MembersPage() {
         </button>
       </div>
 
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2 transition-all">
-          <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
+      {/* Notification Toast */}
+      {toast && (
+        <div
+          className={`p-4 rounded-xl text-xs flex items-center gap-2 border transition-all ${
+            toast.type === "success"
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+              : "bg-rose-500/15 border-rose-500/30 text-rose-700 dark:text-rose-300"
+          }`}
+        >
+          {toast.type === "success" ? (
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
 
-      {/* Search Bar & Count */}
+      {/* Search Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -203,121 +251,150 @@ export default function MembersPage() {
         </div>
       </div>
 
-      {/* Data Table */}
+      {/* Main Table / Empty State */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
-              <tr>
-                <th className="px-6 py-4">Member Name</th>
-                <th className="px-6 py-4">Email</th>
-                <th className="px-6 py-4">Phone</th>
-                <th className="px-6 py-4">Address</th>
-                <th className="px-6 py-4">Joined Date</th>
-                <th className="px-6 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {paginatedMembers.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                  <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 font-bold text-xs flex items-center justify-center border border-emerald-300 dark:border-emerald-800">
-                        {m.first_name[0]}
-                        {m.last_name[0]}
-                      </div>
-                      <Link
-                        href={`/members/${m.id}`}
-                        className="hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline"
-                      >
-                        {m.first_name} {m.last_name}
-                      </Link>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{m.email}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{m.phone}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate max-w-[200px]" title={m.address}>{m.address}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-slate-500">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{formatDate(m.created_at)}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Link
-                        href={`/members/${m.id}`}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 transition-colors"
-                        title="View Details"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Link>
-                      <button
-                        onClick={() => handleOpenEditModal(m)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/60 transition-colors"
-                        title="Edit Member"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setDeletingMember(m)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors"
-                        title="Delete Member"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {paginatedMembers.length === 0 && (
+        {loading ? (
+          <div className="p-12 text-center text-xs text-slate-400">
+            Loading members from Supabase...
+          </div>
+        ) : filteredMembers.length === 0 ? (
+          /* Clean Empty State */
+          <div className="p-12 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center border border-slate-200 dark:border-slate-700">
+              <UserPlus className="w-8 h-8" />
+            </div>
+            <div className="max-w-xs mx-auto">
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                No members found
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {searchTerm
+                  ? "No member matching your search query was found."
+                  : "Your members database is currently empty. Click 'Add Member' to create your first member record."}
+              </p>
+            </div>
+            <button
+              onClick={handleOpenAddModal}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-md"
+            >
+              Add First Member
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
-                    No members found matching your search term.
-                  </td>
+                  <th className="px-6 py-4">Member Name</th>
+                  <th className="px-6 py-4">Email</th>
+                  <th className="px-6 py-4">Phone</th>
+                  <th className="px-6 py-4">Address</th>
+                  <th className="px-6 py-4">Joined Date</th>
+                  <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {paginatedMembers.map((m) => (
+                  <tr
+                    key={m.id}
+                    className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                  >
+                    <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 font-bold text-xs flex items-center justify-center border border-emerald-300 dark:border-emerald-800">
+                          {m.first_name?.[0]}
+                          {m.last_name?.[0]}
+                        </div>
+                        <Link
+                          href={`/members/${m.id}`}
+                          className="hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline"
+                        >
+                          {m.first_name} {m.last_name}
+                        </Link>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>{m.email}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>{m.phone || "—"}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate max-w-[200px]" title={m.address || ""}>
+                          {m.address || "—"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-slate-500">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>{formatDate(m.created_at)}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Link
+                          href={`/members/${m.id}`}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 transition-colors"
+                          title="View Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Link>
+                        <button
+                          onClick={() => handleOpenEditModal(m)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/60 transition-colors"
+                          title="Edit Member"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeletingMember(m)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors"
+                          title="Delete Member"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Pagination Footer */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-          <div>
-            Page {validPage} of {totalPages}
+        {filteredMembers.length > 0 && (
+          <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+            <div>
+              Page {validPage} of {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={validPage === 1}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 font-semibold flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Previous
+              </button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                disabled={validPage >= totalPages}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 font-semibold flex items-center gap-1"
+              >
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-              disabled={validPage === 1}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 font-semibold flex items-center gap-1"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" /> Previous
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-              disabled={validPage >= totalPages}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 font-semibold flex items-center gap-1"
-            >
-              Next <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Add / Edit Member Dialog */}
@@ -338,7 +415,7 @@ export default function MembersPage() {
               {editingMember ? "Edit Member Profile" : "Add New Member"}
             </h3>
             <p className="text-xs text-slate-500 mb-5">
-              Enter member details. Changes will persist across sessions.
+              Enter member details to save directly to Supabase PostgreSQL database.
             </p>
 
             <form onSubmit={handleSaveMember} className="space-y-4 text-xs">
@@ -446,7 +523,7 @@ export default function MembersPage() {
               Delete Member Record?
             </h3>
             <p className="text-xs text-slate-500 mb-6">
-              Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">{deletingMember.first_name} {deletingMember.last_name}</strong>?
+              Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">{deletingMember.first_name} {deletingMember.last_name}</strong> from the database?
             </p>
 
             <div className="flex items-center justify-center gap-3">

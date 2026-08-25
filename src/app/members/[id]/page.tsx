@@ -1,5 +1,9 @@
+"use client";
+
+import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import { initialMembers, initialTransactions, Transaction } from "@/lib/data-store";
+import { createClient } from "@/lib/supabase/client";
+import { Member, Transaction } from "@/lib/data-store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -13,26 +17,76 @@ import {
   CheckCircle2,
   Clock,
   CreditCard,
-  Building2,
   ShieldCheck,
+  UserCheck,
 } from "lucide-react";
 
-export default async function MemberDetailPage({
+export default function MemberDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const resolvedParams = await params;
+  const resolvedParams = use(params);
   const memberId = resolvedParams.id;
+  const supabase = createClient();
 
-  // Find member or fallback to first member
-  const member =
-    initialMembers.find((m) => m.id === memberId) || initialMembers[0];
+  const [member, setMember] = useState<Member | null>(null);
+  const [memberFeeDonations, setMemberFeeDonations] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Filter transactions for this specific member where type === 'member_fee'
-  const memberFeeDonations: Transaction[] = initialTransactions.filter(
-    (t) => (t.member_id === member.id || t.member_id === "mem-001") && t.type === "member_fee"
-  );
+  useEffect(() => {
+    async function loadMemberDetail() {
+      setLoading(true);
+      try {
+        const [memRes, txRes] = await Promise.all([
+          supabase.from("members").select("*").eq("id", memberId).single(),
+          supabase.from("transactions").select("*").eq("member_id", memberId),
+        ]);
+
+        if (memRes.data) {
+          setMember(memRes.data as Member);
+        }
+        if (txRes.data) {
+          setMemberFeeDonations(
+            (txRes.data as Transaction[]).filter((t) => t.type === "member_fee" || t.type === "general_donation")
+          );
+        }
+      } catch (err) {
+        console.error("Error loading member detail from Supabase:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadMemberDetail();
+  }, [memberId]);
+
+  if (loading) {
+    return (
+      <div className="p-12 text-center text-xs text-slate-400">
+        Loading member record from Supabase...
+      </div>
+    );
+  }
+
+  if (!member) {
+    return (
+      <div className="p-12 text-center space-y-4">
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+          Member Not Found
+        </h2>
+        <p className="text-xs text-slate-500">
+          The requested member record (ID: {memberId}) does not exist in your database.
+        </p>
+        <Link
+          href="/members"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-md"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Directory
+        </Link>
+      </div>
+    );
+  }
 
   const totalDuesContributed = memberFeeDonations.reduce(
     (acc, curr) => acc + curr.amount,
@@ -54,8 +108,8 @@ export default async function MemberDetailPage({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-emerald-600 text-white font-extrabold text-xl flex items-center justify-center shadow-lg shadow-emerald-900/30">
-              {member.first_name[0]}
-              {member.last_name[0]}
+              {member.first_name?.[0]}
+              {member.last_name?.[0]}
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -100,7 +154,7 @@ export default async function MemberDetailPage({
               </span>
               <p className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <Phone className="w-3.5 h-3.5 text-slate-400" />
-                {member.phone}
+                {member.phone || "—"}
               </p>
             </div>
 
@@ -110,7 +164,7 @@ export default async function MemberDetailPage({
               </span>
               <p className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                {member.address}
+                {member.address || "—"}
               </p>
             </div>
 
@@ -134,7 +188,7 @@ export default async function MemberDetailPage({
               Dues & Fees Summary
             </h2>
             <div className="mt-4">
-              <span className="text-xs text-slate-500">Total Member Fees Paid</span>
+              <span className="text-xs text-slate-500">Total Contributions Paid</span>
               <p className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight mt-1">
                 {formatCurrency(totalDuesContributed)}
               </p>
@@ -160,7 +214,7 @@ export default async function MemberDetailPage({
               Member Fee Payment History
             </h3>
             <p className="text-xs text-slate-500">
-              Sub-table of member_fee records for {member.first_name} {member.last_name}
+              Sub-table of fee payments for {member.first_name} {member.last_name}
             </p>
           </div>
         </div>

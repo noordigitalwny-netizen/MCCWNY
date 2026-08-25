@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { getStoredTransactions, Transaction } from "@/lib/data-store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
@@ -40,31 +41,35 @@ const yearsList = [
 ];
 
 export default function ReportsPage() {
+  const supabase = createClient();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string>("08"); // Default to August
   const [selectedYear, setSelectedYear] = useState<string>("2026"); // Default to 2026
 
-  // Load transactions and hydrate from server store on mount and focus
-  useEffect(() => {
-    const loadTransactions = () => {
+  // Fetch live transactions directly from Supabase
+  const fetchReportData = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .order("date", { ascending: false });
+
+      if (error) throw error;
+      if (data) setTransactions(data as Transaction[]);
+    } catch (err) {
+      console.error("Supabase fetch error:", err);
       setTransactions(getStoredTransactions());
+    } font: {
+      setLoading(false);
+    }
+  };
 
-      fetch("/api/store")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && data.transactions) {
-            setTransactions(data.transactions);
-            if (typeof window !== "undefined") {
-              localStorage.setItem("mccwny_transactions", JSON.stringify(data.transactions));
-            }
-          }
-        })
-        .catch((err) => console.error("Server store fetch error:", err));
-    };
-
-    loadTransactions();
-    window.addEventListener("focus", loadTransactions);
-    return () => window.removeEventListener("focus", loadTransactions);
+  useEffect(() => {
+    fetchReportData();
+    window.addEventListener("focus", fetchReportData);
+    return () => window.removeEventListener("focus", fetchReportData);
   }, []);
 
   // Filter transactions matching selected Month and Year
@@ -390,7 +395,7 @@ export default function ReportsPage() {
           <div>
             <p className="font-semibold text-white">Supabase Row Level Security Verified</p>
             <p className="text-slate-400 text-[11px]">
-              Reports filter live totals for {selectedMonthLabel} {selectedYearLabel} strictly for authenticated admin accounts.
+              Reports filter live totals for {selectedMonthLabel} {selectedYearLabel} directly from Supabase public.transactions.
             </p>
           </div>
         </div>

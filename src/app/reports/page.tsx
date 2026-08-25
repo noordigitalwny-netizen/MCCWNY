@@ -42,26 +42,26 @@ const yearsList = [
 
 export default function ReportsPage() {
   const supabase = createClient();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string>("08"); // Default to August
   const [selectedYear, setSelectedYear] = useState<string>("2026"); // Default to 2026
 
-  // Fetch live transactions directly from Supabase
+  // Fetch live transactions directly from Supabase with relational joins
   const fetchReportData = async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from("transactions")
-        .select("*")
+        .select("*, members(first_name, last_name, email), students(first_name, last_name)")
         .order("date", { ascending: false });
 
       if (error) throw error;
-      if (data) setTransactions(data as Transaction[]);
+      if (data) setTransactions(data);
     } catch (err) {
       console.error("Supabase fetch error:", err);
       setTransactions(getStoredTransactions());
-    } font: {
+    } finally {
       setLoading(false);
     }
   };
@@ -172,7 +172,11 @@ export default function ReportsPage() {
       const typeLabel = t.type.replace("_", " ");
       const amountStr = t.type === "expense" ? `-${t.amount}` : `${t.amount}`;
       const statusStr = t.is_reconciled ? "Reconciled" : "Pending";
-      const memberStr = t.memberName || "Community Member";
+      const memberStr = t.members?.first_name
+        ? `${t.members.first_name} ${t.members.last_name}`
+        : t.students?.first_name
+        ? `${t.students.first_name} ${t.students.last_name}`
+        : t.memberName || "Community Member";
 
       csvContent += `"${t.date}","${typeLabel}","${t.description.replace(/"/g, '""')}","${memberStr.replace(/"/g, '""')}","${t.payment_method}","${amountStr}","${statusStr}"\n`;
     });

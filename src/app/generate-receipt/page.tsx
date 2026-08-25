@@ -62,32 +62,33 @@ export default function GenerateReceiptPage() {
     setReceiptNo(generateReceiptNo());
   };
 
-  // Save generated receipt directly into Supabase database (Omitting 'id' so database default gen_random_uuid() triggers)
+  // Save generated receipt directly into Supabase database (Sanitized database payload)
   const handleSaveToLedger = async () => {
     if (!fullName || numericAmount <= 0) {
       showToast("Please enter donor full name and a valid donation amount.", "error");
       return;
     }
 
-    const newTx = {
+    const desc = `${donationType} - Receipt #${receiptNo} (${fullName})${notes ? ` - ${notes}` : ""}`;
+
+    const newTxPayload = {
       date: date,
       type: donationType === "General Donation" ? "general_donation" : "member_fee",
       amount: numericAmount,
-      description: `${donationType} - Receipt #${receiptNo}${notes ? ` (${notes})` : ""}`,
+      description: desc,
       member_id: null,
       student_id: null,
       payment_method: paymentMethod,
       is_reconciled: true,
-      memberName: fullName,
     };
 
     try {
-      const { error } = await supabase.from("transactions").insert([newTx]);
+      const { error } = await supabase.from("transactions").insert([newTxPayload]);
       if (error) throw error;
 
       showToast(`Receipt #${receiptNo} logged into Supabase database.`);
       const currentTx = getStoredTransactions();
-      saveStoredTransactions([newTx as Transaction, ...currentTx]);
+      saveStoredTransactions([{ ...newTxPayload, memberName: fullName } as any, ...currentTx]);
     } catch (err: any) {
       showToast(err.message || "Failed to save receipt to database.", "error");
     }
@@ -445,8 +446,6 @@ export default function GenerateReceiptPage() {
           <div className="text-[11px] text-slate-500 leading-relaxed border-t border-slate-200 pt-4 space-y-1">
             <p className="font-semibold text-slate-700 flex items-center gap-1">
               <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />  Note:
-            </p>
-            <p>
             </p>
           </div>
 

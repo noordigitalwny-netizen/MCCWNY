@@ -75,7 +75,7 @@ export default function BankUploadPage() {
     }
   };
 
-  // Sync Extracted PDF transactions directly to Supabase public.transactions (omitting 'id' to let DB generate UUID)
+  // Sync Extracted PDF transactions directly to Supabase public.transactions (sanitized payload)
   const handleImportToSupabase = async () => {
     if (parsedRows.length === 0) return;
 
@@ -83,12 +83,13 @@ export default function BankUploadPage() {
       type: row.type === "withdrawal" ? "expense" : "general_donation",
       amount: row.amount,
       date: row.date,
-      description: row.description,
+      description: row.matchedMember
+        ? `${row.description} (${row.matchedMember})`
+        : row.description,
       member_id: null,
       student_id: null,
       payment_method: row.description.includes("ZELLE") ? "Zelle" : "Bank Transfer",
       is_reconciled: true,
-      memberName: row.matchedMember || "Bank Import Vendor",
     }));
 
     try {
@@ -97,7 +98,7 @@ export default function BankUploadPage() {
 
       showToast(`Successfully inserted ${newTransactions.length} transactions into Supabase database.`);
       const currentTx = getStoredTransactions();
-      saveStoredTransactions([...(newTransactions as Transaction[]), ...currentTx]);
+      saveStoredTransactions([...(newTransactions as any[]), ...currentTx]);
       setParsedRows([]);
       setUploadedFileName(null);
     } catch (err: any) {

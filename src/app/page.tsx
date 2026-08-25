@@ -56,7 +56,7 @@ const yearsList = [
 
 export default function DashboardPage() {
   const supabase = createClient();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,17 +64,20 @@ export default function DashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>("08"); // Default to August
   const [selectedYear, setSelectedYear] = useState<string>("2026"); // Default to 2026
 
-  // Fetch real database records directly from Supabase
+  // Fetch real database records directly from Supabase with relational joins
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
       const [txRes, memRes, stuRes] = await Promise.all([
-        supabase.from("transactions").select("*").order("date", { ascending: false }),
+        supabase
+          .from("transactions")
+          .select("*, members(first_name, last_name, email), students(first_name, last_name)")
+          .order("date", { ascending: false }),
         supabase.from("members").select("*"),
         supabase.from("students").select("*"),
       ]);
 
-      if (txRes.data) setTransactions(txRes.data as Transaction[]);
+      if (txRes.data) setTransactions(txRes.data);
       if (memRes.data) setMembers(memRes.data as Member[]);
       if (stuRes.data) setStudents(stuRes.data as Student[]);
     } catch (err) {
@@ -93,6 +96,13 @@ export default function DashboardPage() {
     window.addEventListener("focus", fetchDashboardData);
     return () => window.removeEventListener("focus", fetchDashboardData);
   }, []);
+
+  const getPayerName = (tx: any) => {
+    if (tx.members?.first_name) return `${tx.members.first_name} ${tx.members.last_name}`;
+    if (tx.students?.first_name) return `${tx.students.first_name} ${tx.students.last_name}`;
+    if (tx.memberName) return tx.memberName;
+    return "—";
+  };
 
   // Filter transactions by selected Month and Year
   const filteredTransactions = transactions.filter((t) => {
@@ -341,7 +351,7 @@ export default function DashboardPage() {
                     </td>
                     <td className="px-4 py-3.5">
                       <p className="font-semibold text-slate-900 dark:text-slate-100">
-                        {tx.memberName || "Community Member"}
+                        {getPayerName(tx)}
                       </p>
                       <p className="text-[11px] text-slate-500 truncate max-w-[200px]">
                         {tx.description}

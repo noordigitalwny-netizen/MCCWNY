@@ -29,7 +29,7 @@ import {
 
 export default function TransactionsPage() {
   const supabase = createClient();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +39,7 @@ export default function TransactionsPage() {
   const [reconciledFilter, setReconciledFilter] = useState<string>("all");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [deletingTx, setDeletingTx] = useState<Transaction | null>(null);
+  const [deletingTx, setDeletingTx] = useState<any | null>(null);
   
   // Notification Toast State
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -60,14 +60,17 @@ export default function TransactionsPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Fetch Transactions directly from Supabase Database
+  // Fetch Transactions with relational joins for members & students
   const fetchTransactionsData = async () => {
     setLoading(true);
     try {
       const [txRes, memRes, stuRes] = await Promise.all([
-        supabase.from("transactions").select("*").order("date", { ascending: false }),
-        supabase.from("members").select("*"),
-        supabase.from("students").select("*"),
+        supabase
+          .from("transactions")
+          .select("*, members(first_name, last_name, email), students(first_name, last_name)")
+          .order("date", { ascending: false }),
+        supabase.from("members").select("*").order("first_name", { ascending: true }),
+        supabase.from("students").select("*").order("first_name", { ascending: true }),
       ]);
 
       if (txRes.error) throw txRes.error;
@@ -75,8 +78,8 @@ export default function TransactionsPage() {
       if (stuRes.data) setStudents(stuRes.data as Student[]);
 
       if (txRes.data) {
-        setTransactions(txRes.data as Transaction[]);
-        saveStoredTransactions(txRes.data as Transaction[]);
+        setTransactions(txRes.data);
+        saveStoredTransactions(txRes.data as any);
       }
     } catch (err: any) {
       console.error("Supabase fetch error:", err);
@@ -94,6 +97,19 @@ export default function TransactionsPage() {
     window.addEventListener("focus", fetchTransactionsData);
     return () => window.removeEventListener("focus", fetchTransactionsData);
   }, []);
+
+  const getPayerName = (tx: any) => {
+    if (tx.members && tx.members.first_name) {
+      return `${tx.members.first_name} ${tx.members.last_name}`;
+    }
+    if (tx.students && tx.students.first_name) {
+      return `${tx.students.first_name} ${tx.students.last_name}`;
+    }
+    if (tx.memberName) {
+      return tx.memberName;
+    }
+    return "—";
+  };
 
   // Toggle Reconciled in Supabase
   const toggleReconciled = async (id: string, currentStatus: boolean) => {
@@ -129,9 +145,10 @@ export default function TransactionsPage() {
   };
 
   const filteredTransactions = transactions.filter((tx) => {
+    const payer = getPayerName(tx);
     const matchesSearch =
       tx.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (tx.memberName && tx.memberName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      payer.toLowerCase().includes(searchTerm.toLowerCase()) ||
       tx.payment_method.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesType = typeFilter === "all" || tx.type === typeFilter;
@@ -143,7 +160,7 @@ export default function TransactionsPage() {
     return matchesSearch && matchesType && matchesReconciled;
   });
 
-  // Record New Transaction directly in Supabase (Omitting 'id' so database default gen_random_uuid() triggers)
+  // Record New Transaction directly in Supabase (Sanitized payload, omitting non-schema memberName field)
   const handleRecordTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.amount || !formData.description) {
@@ -151,23 +168,28 @@ export default function TransactionsPage() {
       return;
     }
 
-    const newTx = {
+    let finalDesc = formData.description;
+    if (formData.memberName && !formData.member_id && !formData.student_id) {
+      finalDesc = `${formData.description} (${formData.memberName})`;
+    }
+
+    // Schema payload: Only valid database columns
+    const dbPayload = {
       type: formData.type,
       amount: parseFloat(formData.amount),
       date: formData.date,
-      description: formData.description,
+      description: finalDesc,
       member_id: formData.member_id || null,
       student_id: formData.student_id || null,
       payment_method: formData.payment_method,
       is_reconciled: true,
-      memberName: formData.memberName || "Community Member / Vendor",
     };
 
     try {
-      const { error } = await supabase.from("transactions").insert([newTx]);
+      const { error } = await supabase.from("transactions").insert([dbPayload]);
       if (error) throw error;
 
-      showToast(`Transaction of ${formatCurrency(newTx.amount)} saved to database.`);
+      showToast(`Transaction of ${formatCurrency(dbPayload.amount)} saved to database.`);
       setIsModalOpen(false);
       setFormData({
         type: "general_donation",
@@ -198,7 +220,7 @@ export default function TransactionsPage() {
               Financial Transactions Ledger
             </h1>
             <p className="text-xs text-slate-500">
-              Live ledger entries directly connected to Supabase public.transactions
+              Live ledger connected to Supabase public.transactions with relational joins
             </p>
           </div>
         </div>
@@ -345,7 +367,7 @@ export default function TransactionsPage() {
                       {tx.description}
                     </td>
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
-                      {tx.memberName || "—"}
+                      {getPayerName(tx)}
                     </td>
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
                       <div className="flex items-center gap-1.5">
@@ -481,18 +503,61 @@ export default function TransactionsPage() {
                 />
               </div>
 
+              {/* Optional Link to Registered Member */}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Payer / Member / Vendor Name
+                  Link Registered Member (Optional)
                 </label>
-                <input
-                  type="text"
-                  value={formData.memberName}
-                  onChange={(e) => setFormData({ ...formData, memberName: e.target.value })}
-                  placeholder="Tariq Mansoor"
+                <select
+                  value={formData.member_id}
+                  onChange={(e) => setFormData({ ...formData, member_id: e.target.value, student_id: "" })}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
-                />
+                >
+                  <option value="">-- Non-Member / Unlinked Payer --</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.first_name} {m.last_name} ({m.email})
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              {/* Optional Link to Student */}
+              {formData.type === "class_payment" && (
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Link Enrolled Student (Optional)
+                  </label>
+                  <select
+                    value={formData.student_id}
+                    onChange={(e) => setFormData({ ...formData, student_id: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">-- No Student Link --</option>
+                    {students.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.first_name} {s.last_name} ({s.grade_level})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Fallback Payer Name if not linked */}
+              {!formData.member_id && !formData.student_id && (
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Payer / Vendor Name
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.memberName}
+                    onChange={(e) => setFormData({ ...formData, memberName: e.target.value })}
+                    placeholder="Tariq Mansoor / National Grid"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">

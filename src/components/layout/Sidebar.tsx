@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Users,
   GraduationCap,
+  CreditCard,
   Receipt,
   FileCheck2,
   UploadCloud,
@@ -23,6 +24,7 @@ const navigationItems = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Members", href: "/members", icon: Users },
   { name: "Students", href: "/students", icon: GraduationCap },
+  { name: "Student Payments", href: "/students/payments", icon: CreditCard },
   { name: "Transactions", href: "/transactions", icon: Receipt },
   { name: "Generate Receipt", href: "/generate-receipt", icon: FileCheck2 },
   { name: "Bank Upload", href: "/bank-upload", icon: UploadCloud },
@@ -101,7 +103,7 @@ export default function Sidebar() {
             const isActive =
               item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href);
+                : pathname === item.href || (item.href !== "/students" && pathname.startsWith(item.href));
             const Icon = item.icon;
 
             return (

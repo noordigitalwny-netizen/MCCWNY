@@ -16,7 +16,16 @@ export interface Student {
   phone_number: string;
   address: string;
   grade_level: string;
+  gender?: "Boy" | "Girl" | string;
   member_parent_id: string | null;
+  created_at: string;
+}
+
+export interface Attendance {
+  id: string;
+  student_id: string;
+  date: string;
+  status: "Present" | "Absent";
   created_at: string;
 }
 

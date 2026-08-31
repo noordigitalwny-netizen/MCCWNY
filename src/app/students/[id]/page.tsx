@@ -131,6 +131,15 @@ export default function StudentDetailPage({
                 <span className="px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800 text-xs font-semibold">
                   {student.grade_level || "Grade 1"}
                 </span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                    (student.gender || "Boy") === "Boy"
+                      ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
+                      : "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 dark:bg-fuchsia-950 dark:text-fuchsia-300 dark:border-fuchsia-800"
+                  }`}
+                >
+                  {student.gender || "Boy"}
+                </span>
               </div>
               <p className="text-xs text-slate-500 mt-1 font-mono">
                 Student ID: {student.id}
@@ -192,7 +201,7 @@ export default function StudentDetailPage({
               </span>
               <p className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <BookOpen className="w-3.5 h-3.5 text-slate-400" />
-                {student.grade_level || "Grade 1"} - Weekend Academy
+                {student.grade_level || "Grade 1"} ({student.gender || "Boy"}) - Weekend Academy
               </p>
             </div>
 

@@ -37,8 +37,22 @@ CREATE TABLE IF NOT EXISTS public.students (
   phone_number TEXT,
   address TEXT,
   grade_level TEXT,
+  gender TEXT DEFAULT 'Boy',
   member_parent_id UUID REFERENCES public.members(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Ensure gender column exists if table was created previously
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS gender TEXT DEFAULT 'Boy';
+
+-- Attendance Table
+CREATE TABLE IF NOT EXISTS public.attendance (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('Present', 'Absent')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (student_id, date)
 );
 
 -- Transactions Table
@@ -57,6 +71,9 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 
 -- 3. INDEXES FOR PERFORMANCE
 CREATE INDEX IF NOT EXISTS idx_students_member_parent ON public.students(member_parent_id);
+CREATE INDEX IF NOT EXISTS idx_students_gender ON public.students(gender);
+CREATE INDEX IF NOT EXISTS idx_attendance_student ON public.attendance(student_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_date ON public.attendance(date);
 CREATE INDEX IF NOT EXISTS idx_transactions_member ON public.transactions(member_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_student ON public.transactions(student_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON public.transactions(type);
@@ -65,11 +82,13 @@ CREATE INDEX IF NOT EXISTS idx_transactions_date ON public.transactions(date);
 -- 4. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE public.members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 
 -- Clear any existing policies
 DROP POLICY IF EXISTS "Allow full access to members" ON public.members;
 DROP POLICY IF EXISTS "Allow full access to students" ON public.students;
+DROP POLICY IF EXISTS "Allow full access to attendance" ON public.attendance;
 DROP POLICY IF EXISTS "Allow full access to transactions" ON public.transactions;
 
 -- RLS Policies for Members
@@ -80,6 +99,11 @@ CREATE POLICY "Allow full access to members"
 -- RLS Policies for Students
 CREATE POLICY "Allow full access to students"
   ON public.students FOR ALL
+  USING (true) WITH CHECK (true);
+
+-- RLS Policies for Attendance
+CREATE POLICY "Allow full access to attendance"
+  ON public.attendance FOR ALL
   USING (true) WITH CHECK (true);
 
 -- RLS Policies for Transactions

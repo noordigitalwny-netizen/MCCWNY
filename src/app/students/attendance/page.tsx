@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Student, Attendance } from "@/lib/data-store";
-import { formatDate } from "@/lib/utils";
+import { formatDate, getLocalTodayString } from "@/lib/utils";
 import { exportToExcel } from "@/lib/excel";
 import {
   GraduationCap,
@@ -49,10 +49,8 @@ export default function StudentAttendancePage() {
   const [exporting, setExporting] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  // Controls State
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
+  // Controls State: Strictly initialized to local current day YYYY-MM-DD
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalTodayString());
   const [genderFilter, setGenderFilter] = useState<string>("All");
   const [searchTerm, setSearchTerm] = useState<string>("");
 

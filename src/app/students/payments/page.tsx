@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Student, Transaction } from "@/lib/data-store";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, getLocalTodayString } from "@/lib/utils";
 import { exportToExcel } from "@/lib/excel";
 import {
   GraduationCap,
@@ -65,7 +65,7 @@ export default function StudentPaymentsPage() {
     student_id: "",
     month: "08",
     year: "2026",
-    date: new Date().toISOString().split("T")[0],
+    date: getLocalTodayString(),
     amount: "40.00",
     payment_method: "Zelle",
     description: "",

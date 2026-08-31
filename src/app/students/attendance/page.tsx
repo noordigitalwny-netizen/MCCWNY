@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Student, Attendance } from "@/lib/data-store";
 import { formatDate } from "@/lib/utils";
+import { exportToExcel } from "@/lib/excel";
 import {
   GraduationCap,
   CalendarCheck,
@@ -23,6 +24,7 @@ import {
   ChevronRight,
   Sparkles,
   CreditCard,
+  FileSpreadsheet,
 } from "lucide-react";
 
 export default function StudentAttendancePage() {
@@ -94,6 +96,31 @@ export default function StudentAttendancePage() {
 
     return matchesSearch && matchesGender;
   });
+
+  // Export Attendance Roster to Excel (.xlsx)
+  const handleExportAttendance = () => {
+    if (filteredStudents.length === 0) {
+      showToast("No student records to export.", "error");
+      return;
+    }
+
+    const exportData = filteredStudents.map((s) => ({
+      "Date": formatDate(selectedDate),
+      "Student Name": `${s.first_name} ${s.last_name}`,
+      "Gender": s.gender || "Boy",
+      "Grade Level": s.grade_level || "Grade 1",
+      "Parent Name": s.parent_name,
+      "Phone Number": s.phone_number || "—",
+      "Attendance Status": attendanceMap[s.id] || "Unmarked",
+    }));
+
+    exportToExcel(
+      exportData,
+      `Student_Attendance_${selectedDate}.xlsx`,
+      `Attendance ${selectedDate}`
+    );
+    showToast(`Exported Student_Attendance_${selectedDate}.xlsx successfully.`);
+  };
 
   // Execute Auto-Save Upsert to Supabase
   const handleToggleAttendance = async (student: Student, newStatus: "Present" | "Absent") => {
@@ -203,7 +230,15 @@ export default function StudentAttendancePage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={handleExportAttendance}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md transition-all flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Export to Excel</span>
+          </button>
+
           <Link
             href="/students/payments"
             className="px-4 py-2.5 rounded-xl bg-purple-100 hover:bg-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 text-purple-900 dark:text-purple-200 font-semibold text-xs transition-all border border-purple-300 dark:border-purple-800 flex items-center gap-2"

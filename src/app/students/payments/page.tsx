@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Student, Transaction } from "@/lib/data-store";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { exportToExcel } from "@/lib/excel";
 import {
   GraduationCap,
   CreditCard,
@@ -144,6 +145,45 @@ export default function StudentPaymentsPage() {
 
   const targetMonthName = monthsList.find((m) => m.code === selectedMonth)?.name || "Selected Month";
 
+  // Export Payments Matrix to Excel (.xlsx)
+  const handleExportPayments = () => {
+    if (filteredStudents.length === 0) {
+      showToast("No student payment records to export.", "error");
+      return;
+    }
+
+    const exportData = filteredStudents.map((s) => {
+      const row: Record<string, any> = {
+        "Student Name": `${s.first_name} ${s.last_name}`,
+        "Gender": s.gender || "Boy",
+        "Grade Level": s.grade_level || "Grade 1",
+        "Parent Name": s.parent_name,
+        "Phone Number": s.phone_number || "—",
+      };
+
+      monthsList.forEach((m) => {
+        const ymKey = `${selectedYear}-${m.code}`;
+        const studentTxList = paymentMap[s.id]?.[ymKey] || [];
+        if (studentTxList.length > 0) {
+          const totalPaid = studentTxList.reduce((sum, t) => sum + (t.amount || 0), 0);
+          const pMethod = studentTxList[0]?.payment_method || "Paid";
+          row[m.name] = `$${totalPaid} (${pMethod})`;
+        } else {
+          row[m.name] = "Unpaid";
+        }
+      });
+
+      return row;
+    });
+
+    exportToExcel(
+      exportData,
+      `Student_Payments_${selectedYear}.xlsx`,
+      `Payments ${selectedYear}`
+    );
+    showToast(`Exported Student_Payments_${selectedYear}.xlsx successfully.`);
+  };
+
   // Open modal for a specific student and month
   const handleOpenAddModal = (studentId: string = "", monthCode: string = selectedMonth) => {
     const student = students.find((s) => s.id === studentId);
@@ -236,13 +276,23 @@ export default function StudentPaymentsPage() {
           </div>
         </div>
 
-        <button
-          onClick={() => handleOpenAddModal("", selectedMonth)}
-          className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all shadow-md shadow-purple-900/20 flex items-center gap-2 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Record Class Payment</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={handleExportPayments}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md transition-all flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Export to Excel</span>
+          </button>
+
+          <button
+            onClick={() => handleOpenAddModal("", selectedMonth)}
+            className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all shadow-md shadow-purple-900/20 flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Record Class Payment</span>
+          </button>
+        </div>
       </div>
 
       {/* Notification Toast */}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Student, Member, getStoredStudents, saveStoredStudents, getStoredMembers } from "@/lib/data-store";
 import { formatDate } from "@/lib/utils";
+import { exportToExcel } from "@/lib/excel";
 import {
   GraduationCap,
   Search,
@@ -25,6 +26,7 @@ import {
   CreditCard,
   CalendarCheck,
   Filter,
+  FileSpreadsheet,
 } from "lucide-react";
 
 export default function StudentsPage() {
@@ -103,6 +105,28 @@ export default function StudentsPage() {
 
     return matchesSearch && matchesGender;
   });
+
+  // Export Student Roster to Excel (.xlsx)
+  const handleExportExcel = () => {
+    if (filteredStudents.length === 0) {
+      showToast("No student records available to export.", "error");
+      return;
+    }
+
+    const exportData = filteredStudents.map((s) => ({
+      "First Name": s.first_name,
+      "Last Name": s.last_name,
+      "Gender": s.gender || "Boy",
+      "Grade Level": s.grade_level || "Grade 1",
+      "Parent Name": s.parent_name,
+      "Phone": s.phone_number || "—",
+      "Address": s.address || "—",
+      "Enrolled Date": formatDate(s.created_at),
+    }));
+
+    exportToExcel(exportData, "Student_Roster.xlsx", "Students Roster");
+    showToast("Exported Student_Roster.xlsx successfully.");
+  };
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredStudents.length / itemsPerPage) || 1;
@@ -232,6 +256,14 @@ export default function StudentsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={handleExportExcel}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md transition-all flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Export to Excel</span>
+          </button>
+
           <Link
             href="/students/attendance"
             className="px-4 py-2.5 rounded-xl bg-purple-100 hover:bg-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 text-purple-900 dark:text-purple-200 font-semibold text-xs transition-all border border-purple-300 dark:border-purple-800 flex items-center gap-2"

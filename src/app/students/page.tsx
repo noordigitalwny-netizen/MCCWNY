@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   UserPlus,
   CreditCard,
+  CalendarCheck,
   Filter,
 } from "lucide-react";
 
@@ -231,6 +232,14 @@ export default function StudentsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <Link
+            href="/students/attendance"
+            className="px-4 py-2.5 rounded-xl bg-purple-100 hover:bg-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 text-purple-900 dark:text-purple-200 font-semibold text-xs transition-all border border-purple-300 dark:border-purple-800 flex items-center gap-2"
+          >
+            <CalendarCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <span>Attendance Tracker</span>
+          </Link>
+
           <Link
             href="/students/payments"
             className="px-4 py-2.5 rounded-xl bg-purple-100 hover:bg-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 text-purple-900 dark:text-purple-200 font-semibold text-xs transition-all border border-purple-300 dark:border-purple-800 flex items-center gap-2"

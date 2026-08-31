@@ -27,10 +27,26 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 
+const monthNames = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
 export default function StudentAttendancePage() {
   const supabase = createClient();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   // Controls State
@@ -40,7 +56,7 @@ export default function StudentAttendancePage() {
   const [genderFilter, setGenderFilter] = useState<string>("All");
   const [searchTerm, setSearchTerm] = useState<string>("");
 
-  // Attendance Records State: Map of student_id -> "Present" | "Absent"
+  // Attendance Records State for selected day: Map of student_id -> "Present" | "Absent"
   const [attendanceMap, setAttendanceMap] = useState<Record<string, "Present" | "Absent">>({});
 
   // Toast Notification State
@@ -97,29 +113,102 @@ export default function StudentAttendancePage() {
     return matchesSearch && matchesGender;
   });
 
-  // Export Attendance Roster to Excel (.xlsx)
-  const handleExportAttendance = () => {
+  // Export Full Month Attendance Sheet to Excel Matrix (.xlsx)
+  const handleExportAttendance = async () => {
     if (filteredStudents.length === 0) {
       showToast("No student records to export.", "error");
       return;
     }
 
-    const exportData = filteredStudents.map((s) => ({
-      "Date": formatDate(selectedDate),
-      "Student Name": `${s.first_name} ${s.last_name}`,
-      "Gender": s.gender || "Boy",
-      "Grade Level": s.grade_level || "Grade 1",
-      "Parent Name": s.parent_name,
-      "Phone Number": s.phone_number || "—",
-      "Attendance Status": attendanceMap[s.id] || "Unmarked",
-    }));
+    setExporting(true);
 
-    exportToExcel(
-      exportData,
-      `Student_Attendance_${selectedDate}.xlsx`,
-      `Attendance ${selectedDate}`
-    );
-    showToast(`Exported Student_Attendance_${selectedDate}.xlsx successfully.`);
+    try {
+      // 1. Determine Full Month Range strictly without timezone shifts
+      const [yearStr, monthStr] = selectedDate.split("-");
+      const yearNum = parseInt(yearStr, 10);
+      const monthIdx = parseInt(monthStr, 10) - 1; // 0-indexed
+
+      // Last day of selected month (e.g., 31 for August)
+      const daysInMonth = new Date(yearNum, monthIdx + 1, 0).getDate();
+
+      const startDateStr = `${yearStr}-${monthStr}-01`;
+      const endDateStr = `${yearStr}-${monthStr}-${String(daysInMonth).padStart(2, "0")}`;
+
+      // 2. Fetch full month attendance records from Supabase
+      const { data: monthAttData, error } = await supabase
+        .from("attendance")
+        .select("*")
+        .gte("date", startDateStr)
+        .lte("date", endDateStr);
+
+      if (error) throw error;
+
+      // 3. Map Attendance Records: student_id -> dayNumber (1..31) -> "Present" | "Absent"
+      // Strict local date parsing via string splitting to prevent timezone shifts!
+      const studentMonthAttMap: Record<string, Record<number, "Present" | "Absent">> = {};
+
+      if (monthAttData) {
+        (monthAttData as Attendance[]).forEach((rec) => {
+          if (!rec.date) return;
+          const [, , dStr] = rec.date.split("-");
+          const dayNum = parseInt(dStr, 10);
+          if (!studentMonthAttMap[rec.student_id]) {
+            studentMonthAttMap[rec.student_id] = {};
+          }
+          studentMonthAttMap[rec.student_id][dayNum] = rec.status;
+        });
+      }
+
+      // 4. Build Monthly Attendance Grid Matrix
+      const exportData = filteredStudents.map((s) => {
+        const row: Record<string, any> = {
+          "First Name": s.first_name,
+          "Last Name": s.last_name,
+          "Gender": s.gender || "Boy",
+          "Grade": s.grade_level || "Grade 1",
+          "Parent Name": s.parent_name,
+          "Phone Number": s.phone_number || "—",
+        };
+
+        let presentTotal = 0;
+        let absentTotal = 0;
+
+        // Generate columns for every day in the month (1..daysInMonth)
+        for (let day = 1; day <= daysInMonth; day++) {
+          const status = studentMonthAttMap[s.id]?.[day];
+          if (status === "Present") {
+            row[String(day)] = "P";
+            presentTotal++;
+          } else if (status === "Absent") {
+            row[String(day)] = "A";
+            absentTotal++;
+          } else {
+            row[String(day)] = ""; // Blank if no record
+          }
+        }
+
+        // Summary columns
+        row["Total Present"] = presentTotal;
+        row["Total Absent"] = absentTotal;
+        const totalMarked = presentTotal + absentTotal;
+        row["Attendance %"] =
+          totalMarked > 0 ? `${Math.round((presentTotal / totalMarked) * 100)}%` : "N/A";
+
+        return row;
+      });
+
+      // 5. Generate Excel workbook with dynamic filename
+      const monthNameStr = monthNames[monthIdx] || "Month";
+      const fileName = `Student_Attendance_${monthNameStr}_${yearStr}.xlsx`;
+
+      exportToExcel(exportData, fileName, `Attendance ${monthNameStr}`);
+      showToast(`Exported ${fileName} successfully.`);
+    } catch (err: any) {
+      console.error("Export error:", err);
+      showToast(err.message || "Failed to export attendance matrix.", "error");
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Execute Auto-Save Upsert to Supabase
@@ -233,10 +322,11 @@ export default function StudentAttendancePage() {
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <button
             onClick={handleExportAttendance}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md transition-all flex items-center gap-2"
+            disabled={exporting}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            <span>Export to Excel</span>
+            <span>{exporting ? "Generating Excel..." : "Export to Excel"}</span>
           </button>
 
           <Link
